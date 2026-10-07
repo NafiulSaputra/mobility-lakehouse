@@ -41,9 +41,12 @@ flowchart LR
 | Layer | Contains | Write strategy |
 |---|---|---|
 | Bronze | Source rows as delivered, plus source file name, load time and data month | Overwrite one month per run |
-| Silver | Rows that passed all quality rules, with correct types and taxi zone names | Overwrite one month per run |
-| Quarantine | Rows that failed at least one rule, with the rule name(s) | Overwrite one month per run |
+| Silver | Rows that passed every reject rule, with taxi zone names and their warning rule IDs | Overwrite one month per run |
+| Quarantine | Rows that failed at least one reject rule, with the rule IDs | Overwrite one month per run |
+| Rule counts | Rows matched per quality rule per month, to spot changes in the source | Overwrite one month per run |
 | Gold | Aggregated tables for analysis (defined in a later ADR) | Rebuilt from silver |
+
+Column-level details: [docs/data-model.md](docs/data-model.md).
 
 ## Key decisions
 
@@ -67,7 +70,7 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 - [x] Sprint 0: code quality tooling (ruff, pytest, pre-commit, pipeline-lint, GitHub Actions)
 - [x] Sprint 1: local Spark + Delta in Docker, sample data, data profiling reports ([2024-06](docs/profiling/fhvhv_2024-06.md), [2025-01](docs/profiling/fhvhv_2025-01.md))
 - [x] Sprint 2: bronze ingestion with idempotency tests, run in CI on every pull request
-- [ ] Sprint 3: silver quality rules, quarantine table and per-run quality metrics
+- [x] Sprint 3: silver quality rules, quarantine table and per-rule quality counts ([data model](docs/data-model.md))
 - [ ] Sprint 4: gold tables and deployment to Databricks with Asset Bundles
 
 ### Later stages (target: v1.0)
@@ -100,17 +103,18 @@ uv run pipeline-lint check .     # rerun-safety checks for pipeline code
 Spark runs in Docker with versions pinned to Databricks serverless ([ADR 0005](docs/adr/0005-local-spark-in-docker-pinned-to-databricks.md)):
 
 ```bash
-uv run mobility-lakehouse download --month 2025-01             # raw file into data/ (safe to rerun)
+uv run mobility-lakehouse download --month 2025-01             # raw file + zone lookup (safe to rerun)
 docker compose build spark                                      # once, or after dependency changes
 docker compose run --rm spark mobility-lakehouse profile --month 2025-01
 docker compose run --rm spark mobility-lakehouse bronze --month 2025-01    # safe to rerun
+docker compose run --rm spark mobility-lakehouse silver --month 2025-01    # quality rules, safe to rerun
 docker compose run --rm spark pytest -m spark                              # Spark tests
 ```
 
 Profiling reports are written to [`docs/profiling`](docs/profiling/).
 
 CI runs two jobs on every pull request and on `main`: lint, format, pipeline-lint and unit tests, and the Spark
-tests that prove bronze is idempotent.
+tests that prove bronze and silver are idempotent and every quality rule works.
 
 ## Data source and license
 

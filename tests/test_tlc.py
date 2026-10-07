@@ -110,3 +110,16 @@ def test_incomplete_download_leaves_no_file(tmp_path: Path) -> None:
 
     folder = local_path(tmp_path, "fhvhv", Month.parse("2025-01")).parent
     assert list(folder.iterdir()) == []
+
+
+def test_zone_lookup_download_is_idempotent(tmp_path: Path) -> None:
+    from mobility_lakehouse.tlc import download_zone_lookup, zone_lookup_path
+
+    server = FakeServer(b'"LocationID","Borough","Zone","service_zone"\n1,"EWR","Newark Airport","EWR"\n')
+    first = download_zone_lookup(tmp_path, opener=server)
+    second = download_zone_lookup(tmp_path, opener=server)
+
+    assert first.path == zone_lookup_path(tmp_path)
+    assert first.downloaded is True
+    assert second.downloaded is False
+    assert server.get_requests == 1

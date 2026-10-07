@@ -13,15 +13,13 @@ from mobility_lakehouse.contracts import (
     HVFHV_SOURCE,
     check_source_columns,
 )
+from mobility_lakehouse.delta_io import month_predicate, replace_month
 from mobility_lakehouse.tlc import Month
 
 if TYPE_CHECKING:
     from pyspark.sql import DataFrame
 
-
-def month_predicate(month: Month) -> str:
-    """The replaceWhere condition that selects one month partition."""
-    return f"{BRONZE_PARTITION_COLUMN} = DATE'{month.start.isoformat()}'"
+__all__ = ["month_predicate", "prepare_bronze", "write_bronze"]
 
 
 def prepare_bronze(
@@ -63,16 +61,4 @@ def write_bronze(
     table: str | None = None,
 ) -> None:
     """Replace one month in the bronze Delta table, given either a storage path or a table name."""
-    if (path is None) == (table is None):
-        raise ValueError("give exactly one of path or table")
-
-    writer = (
-        bronze.write.format("delta")
-        .mode("overwrite")
-        .option("replaceWhere", month_predicate(month))
-        .partitionBy(BRONZE_PARTITION_COLUMN)
-    )
-    if path is not None:
-        writer.save(path)
-    else:
-        writer.saveAsTable(table)
+    replace_month(bronze, month, path=path, table=table)

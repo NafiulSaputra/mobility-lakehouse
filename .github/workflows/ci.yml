@@ -15,7 +15,7 @@ concurrency:
 jobs:
   checks:
     name: Lint and test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -39,7 +39,7 @@ jobs:
 
   spark:
     name: Spark tests (Delta Lake)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -54,5 +54,5 @@ jobs:
       - name: Install dependencies including PySpark and Delta Lake
         run: uv sync --locked --group spark
 
-      - name: Spark tests (idempotency, schema contract)
+      - name: Spark tests (bronze, silver, quality rules)
         run: uv run pytest -m spark

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 BASE_URL = "https://d37ci6vzurychx.cloudfront.net/trip-data"
+ZONE_LOOKUP_URL = "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv"
 
 # Dataset key -> file name prefix used by the TLC.
 DATASETS = {"fhvhv": "fhvhv_tripdata"}
@@ -99,20 +100,13 @@ def remote_size(url: str, opener: Opener = _default_opener) -> int | None:
     return int(length) if length is not None else None
 
 
-def download_month(
-    dataset: str,
-    month: Month,
-    data_dir: Path,
-    opener: Opener = _default_opener,
-) -> DownloadResult:
-    """Download one month of raw data. Safe to run again.
+def _download(url: str, target: Path, opener: Opener) -> DownloadResult:
+    """Download a file. Safe to run again.
 
     - If a local file with the same size as the remote file exists, nothing is downloaded.
     - The file is written to a temporary ``.part`` file first and renamed only when complete,
       so an interrupted download never leaves a truncated file under the final name.
     """
-    url = file_url(dataset, month)
-    target = local_path(data_dir, dataset, month)
     target.parent.mkdir(parents=True, exist_ok=True)
 
     expected = remote_size(url, opener)
@@ -130,3 +124,23 @@ def download_month(
 
     partial.replace(target)
     return DownloadResult(target, size, downloaded=True)
+
+
+def download_month(
+    dataset: str,
+    month: Month,
+    data_dir: Path,
+    opener: Opener = _default_opener,
+) -> DownloadResult:
+    """Download one month of raw data. Safe to run again."""
+    return _download(file_url(dataset, month), local_path(data_dir, dataset, month), opener)
+
+
+def zone_lookup_path(data_dir: Path) -> Path:
+    """Where the TLC taxi zone lookup table is stored."""
+    return data_dir / "raw" / "reference" / "taxi_zone_lookup.csv"
+
+
+def download_zone_lookup(data_dir: Path, opener: Opener = _default_opener) -> DownloadResult:
+    """Download the taxi zone lookup table (zone ID to borough and zone name). Safe to run again."""
+    return _download(ZONE_LOOKUP_URL, zone_lookup_path(data_dir), opener)
