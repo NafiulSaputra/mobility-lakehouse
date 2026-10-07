@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # uv reads .python-version and installs Python 3.12 itself.
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Install dependencies (must match uv.lock)
+        run: uv sync --locked
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: pipeline-lint (rerun safety)
+        run: uv run pipeline-lint check .
+
+      - name: Tests
+        run: uv run pytest

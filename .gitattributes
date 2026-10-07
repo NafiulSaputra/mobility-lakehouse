@@ -1,0 +1,5 @@
+# Store and check out text files with LF line endings on every OS,
+# so Windows and Linux (CI, Databricks) see identical files.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf

@@ -1,5 +1,7 @@
 # mobility-lakehouse
 
+[![CI](https://github.com/NafiulSaputra/mobility-lakehouse/actions/workflows/ci.yml/badge.svg)](https://github.com/NafiulSaputra/mobility-lakehouse/actions/workflows/ci.yml)
+
 End-to-end Databricks lakehouse for NYC ride-hailing trip data (NYC TLC High Volume For-Hire Vehicle records).
 Incremental, idempotent bronze/silver/gold pipelines with Delta Lake, explicit data quality checks with quarantine,
 CI/CD, and architecture decision records.
@@ -59,7 +61,7 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 ### Stage 1: batch lakehouse (target: v0.1.0)
 
 - [x] Sprint 0: environment, repository, README and first ADRs
-- [ ] Sprint 0: code quality tooling (ruff, pytest, pre-commit, pipeline-lint, GitHub Actions)
+- [x] Sprint 0: code quality tooling (ruff, pytest, pre-commit, pipeline-lint, GitHub Actions)
 - [ ] Sprint 1: local Spark + Delta in Docker, sample data, data profiling report
 - [ ] Sprint 2: bronze ingestion with idempotency tests
 - [ ] Sprint 3: silver quality rules, quarantine table and per-run quality metrics
@@ -78,6 +80,21 @@ Python 3.12 · PySpark · Delta Lake · Databricks (Free Edition, serverless) ·
 Docker · uv · pytest · ruff · [pipeline-lint](https://github.com/NafiulSaputra/pipeline-lint) · GitHub Actions
 
 Python 3.12 matches Databricks serverless environment version 5.
+
+## Development
+
+Requirements: [uv](https://docs.astral.sh/uv/) and Git. Docker is needed from Sprint 1.
+
+```bash
+uv sync                          # create .venv with Python 3.12 and all dev tools
+uv run pre-commit install        # run checks automatically before every commit
+uv run pytest                    # tests
+uv run ruff check .              # lint
+uv run ruff format .             # format
+uv run pipeline-lint check .     # rerun-safety checks for pipeline code
+```
+
+CI runs the same checks on every pull request and on `main`.
 
 ## Data source and license
 
