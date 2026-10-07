@@ -57,6 +57,7 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 | [0004](docs/adr/0004-quarantine-failed-rows.md) | Keep rows that fail quality checks in a quarantine table with the reason |
 | [0005](docs/adr/0005-local-spark-in-docker-pinned-to-databricks.md) | Develop locally with Spark in Docker, pinned to Databricks serverless versions |
 | [0006](docs/adr/0006-data-quality-rules-and-silver-schema.md) | Quality rules (7 reject, 5 warning) and silver schema, based on profiling two months |
+| [0007](docs/adr/0007-explicit-bronze-schema-contract.md) | Bronze follows an explicit schema contract; unknown source columns stop the load |
 
 ## Roadmap
 
@@ -65,7 +66,7 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 - [x] Sprint 0: environment, repository, README and first ADRs
 - [x] Sprint 0: code quality tooling (ruff, pytest, pre-commit, pipeline-lint, GitHub Actions)
 - [x] Sprint 1: local Spark + Delta in Docker, sample data, data profiling reports ([2024-06](docs/profiling/fhvhv_2024-06.md), [2025-01](docs/profiling/fhvhv_2025-01.md))
-- [ ] Sprint 2: bronze ingestion with idempotency tests
+- [x] Sprint 2: bronze ingestion with idempotency tests, run in CI on every pull request
 - [ ] Sprint 3: silver quality rules, quarantine table and per-run quality metrics
 - [ ] Sprint 4: gold tables and deployment to Databricks with Asset Bundles
 
@@ -102,11 +103,14 @@ Spark runs in Docker with versions pinned to Databricks serverless ([ADR 0005](d
 uv run mobility-lakehouse download --month 2025-01             # raw file into data/ (safe to rerun)
 docker compose build spark                                      # once, or after dependency changes
 docker compose run --rm spark mobility-lakehouse profile --month 2025-01
+docker compose run --rm spark mobility-lakehouse bronze --month 2025-01    # safe to rerun
+docker compose run --rm spark pytest -m spark                              # Spark tests
 ```
 
 Profiling reports are written to [`docs/profiling`](docs/profiling/).
 
-CI runs the lint, format, pipeline-lint and test checks on every pull request and on `main`.
+CI runs two jobs on every pull request and on `main`: lint, format, pipeline-lint and unit tests, and the Spark
+tests that prove bronze is idempotent.
 
 ## Data source and license
 

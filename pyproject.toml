@@ -27,6 +27,7 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["-ra", "--strict-markers"]
+markers = ["spark: needs a local Spark session with Delta Lake (run inside Docker or the CI Spark job)"]
 
 [tool.pipeline-lint]
 sql-dialect = "databricks"

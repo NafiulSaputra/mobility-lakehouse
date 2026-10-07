@@ -12,6 +12,7 @@ one is marked `Superseded`.
 | [0004](0004-quarantine-failed-rows.md) | Quarantine rows that fail quality checks | Accepted |
 | [0005](0005-local-spark-in-docker-pinned-to-databricks.md) | Local Spark in Docker, pinned to Databricks serverless versions | Accepted |
 | [0006](0006-data-quality-rules-and-silver-schema.md) | Data quality rules and silver schema | Accepted |
+| [0007](0007-explicit-bronze-schema-contract.md) | Explicit schema contract for bronze | Accepted |
 
 ## Template
 
