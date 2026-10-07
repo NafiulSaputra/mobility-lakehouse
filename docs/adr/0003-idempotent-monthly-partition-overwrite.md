@@ -1,6 +1,6 @@
 # 0003. Idempotent runs through monthly partition overwrite
 
-- Status: Accepted, to be validated in Sprint 1 (data profiling)
+- Status: Accepted, validated by profiling on 2026-10-07
 - Date: 2026-10-07
 - Decider: Nafiul Hadi Saputra
 
@@ -36,5 +36,20 @@ Each run processes exactly one data month. In every layer it **replaces that mon
 
 ## Validation
 
-If Sprint 1 profiling finds a reliable unique trip identifier, or finds that files contain many trips outside their
-own month, this decision is reviewed and a new ADR is written.
+Profiling of two months ([2024-06](../profiling/fhvhv_2024-06.md) and [2025-01](../profiling/fhvhv_2025-01.md))
+confirms the decision:
+
+| Check | 2024-06 | 2025-01 |
+|---|---|---|
+| Rows | 20,123,226 | 20,405,666 |
+| Identical full rows | 0 | 0 |
+| Candidate key not unique (license, base, pickup, drop-off, pickup zone, drop-off zone) | 43 groups, 87 rows | 27 groups, 54 rows |
+| Pickup time outside the file's month | 0 | 0 |
+
+- The data dictionary has no trip identifier, and the most specific combination of columns is still not
+  unique. A MERGE on that key would silently merge real, different trips.
+- Every trip falls inside its file's month, so one file maps to exactly one month partition.
+- Files contain no exact duplicates, so overwriting a month never needs de-duplication.
+
+A guard against trips outside the partition month is still part of the quality rules (ADR 0006): it costs
+nothing today and protects the overwrite strategy if a future file breaks the pattern.

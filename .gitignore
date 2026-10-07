@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local data and Spark/Delta artifacts (never committed)
+data/
+spark-warehouse/
+metastore_db/
+derby.log

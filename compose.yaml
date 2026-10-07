@@ -1,0 +1,17 @@
+# Local development services.
+#   docker compose build spark
+#   docker compose run --rm spark mobility-lakehouse profile --month 2025-01
+services:
+  spark:
+    build:
+      context: .
+      dockerfile: docker/spark/Dockerfile
+    image: mobility-lakehouse-spark:local
+    working_dir: /workspace
+    volumes:
+      # The repository (code, data/ and docs/) is shared with the container, so results land on the host.
+      - .:/workspace
+    environment:
+      SPARK_DRIVER_MEMORY: ${SPARK_DRIVER_MEMORY:-3g}
+    ports:
+      - "4040:4040" # Spark UI while a job runs: http://localhost:4040

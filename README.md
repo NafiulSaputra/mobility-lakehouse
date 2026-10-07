@@ -55,6 +55,8 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 | [0002](docs/adr/0002-scope-hvfhv-2024-onwards.md) | Scope v0.1.0 to the HVFHV dataset, January 2024 onwards |
 | [0003](docs/adr/0003-idempotent-monthly-partition-overwrite.md) | Make runs idempotent by overwriting one month partition per run |
 | [0004](docs/adr/0004-quarantine-failed-rows.md) | Keep rows that fail quality checks in a quarantine table with the reason |
+| [0005](docs/adr/0005-local-spark-in-docker-pinned-to-databricks.md) | Develop locally with Spark in Docker, pinned to Databricks serverless versions |
+| [0006](docs/adr/0006-data-quality-rules-and-silver-schema.md) | Quality rules (7 reject, 5 warning) and silver schema, based on profiling two months |
 
 ## Roadmap
 
@@ -62,7 +64,7 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 
 - [x] Sprint 0: environment, repository, README and first ADRs
 - [x] Sprint 0: code quality tooling (ruff, pytest, pre-commit, pipeline-lint, GitHub Actions)
-- [ ] Sprint 1: local Spark + Delta in Docker, sample data, data profiling report
+- [x] Sprint 1: local Spark + Delta in Docker, sample data, data profiling reports ([2024-06](docs/profiling/fhvhv_2024-06.md), [2025-01](docs/profiling/fhvhv_2025-01.md))
 - [ ] Sprint 2: bronze ingestion with idempotency tests
 - [ ] Sprint 3: silver quality rules, quarantine table and per-run quality metrics
 - [ ] Sprint 4: gold tables and deployment to Databricks with Asset Bundles
@@ -76,17 +78,17 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 
 ## Tech stack
 
-Python 3.12 · PySpark · Delta Lake · Databricks (Free Edition, serverless) · Databricks Asset Bundles ·
+Python 3.12 · PySpark 4.1 · Delta Lake 4.3 · Databricks (Free Edition, serverless) · Databricks Asset Bundles ·
 Docker · uv · pytest · ruff · [pipeline-lint](https://github.com/NafiulSaputra/pipeline-lint) · GitHub Actions
 
 Python 3.12 matches Databricks serverless environment version 5.
 
 ## Development
 
-Requirements: [uv](https://docs.astral.sh/uv/) and Git. Docker is needed from Sprint 1.
+Requirements: [uv](https://docs.astral.sh/uv/), Git and Docker.
 
 ```bash
-uv sync                          # create .venv with Python 3.12 and all dev tools
+uv sync                          # create .venv with Python 3.12 and the dev tools
 uv run pre-commit install        # run checks automatically before every commit
 uv run pytest                    # tests
 uv run ruff check .              # lint
@@ -94,7 +96,17 @@ uv run ruff format .             # format
 uv run pipeline-lint check .     # rerun-safety checks for pipeline code
 ```
 
-CI runs the same checks on every pull request and on `main`.
+Spark runs in Docker with versions pinned to Databricks serverless ([ADR 0005](docs/adr/0005-local-spark-in-docker-pinned-to-databricks.md)):
+
+```bash
+uv run mobility-lakehouse download --month 2025-01             # raw file into data/ (safe to rerun)
+docker compose build spark                                      # once, or after dependency changes
+docker compose run --rm spark mobility-lakehouse profile --month 2025-01
+```
+
+Profiling reports are written to [`docs/profiling`](docs/profiling/).
+
+CI runs the lint, format, pipeline-lint and test checks on every pull request and on `main`.
 
 ## Data source and license
 
