@@ -14,7 +14,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from mobility_lakehouse.contracts import HVFHV_SOURCE
-from mobility_lakehouse.delta_io import PARTITION_COLUMN, replace_month
+from mobility_lakehouse.delta_io import PARTITION_COLUMN, Table, write_month
 from mobility_lakehouse.quality import (
     CANDIDATE_KEY,
     CANDIDATE_KEY_ROWS,
@@ -144,11 +144,11 @@ def rule_counts_frame(spark: SparkSession, result: SilverResult, month_start: da
 
 @dataclass(frozen=True)
 class SilverTargets:
-    """Storage paths of the three tables written for each month."""
+    """The three tables written for each month."""
 
-    silver: str
-    quarantine: str
-    rule_counts: str
+    silver: Table
+    quarantine: Table
+    rule_counts: Table
 
 
 def build_silver(
@@ -156,21 +156,26 @@ def build_silver(
     zones: DataFrame,
     month: Month,
     targets: SilverTargets,
+    persist: bool = True,
 ) -> SilverResult:
     """Run the quality rules on one bronze month and replace that month in all three tables.
 
-    The evaluated rows are persisted to disk once, so the window and the rules run a single time even though
-    three tables are written. Disk instead of memory keeps a 20-million-row month within a laptop's memory.
+    With ``persist`` (local Spark), the evaluated rows are written to disk once, so the window and the rules
+    run a single time even though three tables are written. Databricks serverless does not support caching
+    (ADR 0009), so there ``persist`` is False and Spark recomputes the rules for each table instead.
     """
     from pyspark import StorageLevel
 
-    evaluated = evaluate(bronze_month, zones).persist(StorageLevel.DISK_ONLY)
+    evaluated = evaluate(bronze_month, zones)
+    if persist:
+        evaluated = evaluated.persist(StorageLevel.DISK_ONLY)
     try:
         result = count_rules(evaluated)
-        replace_month(silver_rows(evaluated), month, path=targets.silver)
-        replace_month(quarantine_rows(evaluated), month, path=targets.quarantine)
+        write_month(silver_rows(evaluated), month, targets.silver)
+        write_month(quarantine_rows(evaluated), month, targets.quarantine)
         counts = rule_counts_frame(evaluated.sparkSession, result, month.start)
-        replace_month(counts, month, path=targets.rule_counts)
+        write_month(counts, month, targets.rule_counts)
     finally:
-        evaluated.unpersist()
+        if persist:
+            evaluated.unpersist()
     return result

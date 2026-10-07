@@ -10,9 +10,9 @@ import pytest
 pytest.importorskip("pyspark")
 pytest.importorskip("delta")
 
-from factories import bronze_frame, read_delta, trip_row, zones_frame  # noqa: E402
+from factories import bronze_frame, trip_row, zones_frame  # noqa: E402
 
-from mobility_lakehouse.delta_io import month_predicate  # noqa: E402
+from mobility_lakehouse.delta_io import Table, month_predicate  # noqa: E402
 from mobility_lakehouse.gold import (  # noqa: E402
     GoldTargets,
     build_gold,
@@ -112,21 +112,21 @@ def test_rebuilding_a_month_is_idempotent_and_leaves_other_months(
     spark: SparkSession, tmp_path: Path
 ) -> None:
     targets = GoldTargets(
-        daily_company_trips=str(tmp_path / "daily"),
-        hourly_pickup_zones=str(tmp_path / "hourly"),
-        monthly_driver_economics=str(tmp_path / "economics"),
+        daily_company_trips=Table(path=str(tmp_path / "daily")),
+        hourly_pickup_zones=Table(path=str(tmp_path / "hourly")),
+        monthly_driver_economics=Table(path=str(tmp_path / "economics")),
     )
     jan = silver_frame(spark, JAN, [trip(JAN, n) for n in range(5)])
     build_gold(jan, JAN, targets)
     build_gold(silver_frame(spark, FEB, [trip(FEB, n) for n in range(3)]), FEB, targets)
-    first = read_delta(spark, Path(targets.daily_company_trips)).cache()
+    first = targets.daily_company_trips.read(spark).cache()
     first.count()
 
     build_gold(jan, JAN, targets)
 
-    second = read_delta(spark, Path(targets.daily_company_trips))
+    second = targets.daily_company_trips.read(spark)
     assert first.exceptAll(second).isEmpty()
     assert second.exceptAll(first).isEmpty()
-    economics = read_delta(spark, Path(targets.monthly_driver_economics))
+    economics = targets.monthly_driver_economics.read(spark)
     assert only_row(economics.where(month_predicate(JAN)))["trips"] == 5
     assert only_row(economics.where(month_predicate(FEB)))["trips"] == 3

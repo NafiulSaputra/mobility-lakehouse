@@ -62,6 +62,7 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 | [0006](docs/adr/0006-data-quality-rules-and-silver-schema.md) | Quality rules (7 reject, 5 warning) and silver schema, based on profiling two months |
 | [0007](docs/adr/0007-explicit-bronze-schema-contract.md) | Bronze follows an explicit schema contract; unknown source columns stop the load |
 | [0008](docs/adr/0008-gold-tables.md) | Gold has one table per business question; ratios are computed from totals |
+| [0009](docs/adr/0009-running-on-databricks.md) | The same pipeline steps run locally and as a Databricks Asset Bundle job on serverless |
 
 ## Roadmap
 
@@ -112,6 +113,14 @@ docker compose run --rm spark mobility-lakehouse bronze --month 2025-01    # saf
 docker compose run --rm spark mobility-lakehouse silver --month 2025-01    # quality rules, safe to rerun
 docker compose run --rm spark mobility-lakehouse gold --month 2025-01      # gold tables, safe to rerun
 docker compose run --rm spark pytest -m spark                              # Spark tests
+```
+
+On Databricks, the same steps run as a three-task job defined in [`databricks.yml`](databricks.yml).
+The step-by-step guide is in the [Databricks runbook](docs/runbook-databricks.md):
+
+```bash
+databricks bundle deploy --profile mobility
+databricks bundle run monthly_pipeline --profile mobility --params month=2025-01
 ```
 
 Profiling reports are written to [`docs/profiling`](docs/profiling/).
