@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -11,8 +11,10 @@ import pytest
 pytest.importorskip("pyspark")
 pytest.importorskip("delta")
 
-from mobility_lakehouse.bronze import month_predicate, prepare_bronze, write_bronze  # noqa: E402
-from mobility_lakehouse.contracts import HVFHV_SOURCE, SchemaContractError, ddl  # noqa: E402
+from factories import FIXED_TIME, load_bronze, raw_month, read_delta  # noqa: E402
+
+from mobility_lakehouse.bronze import month_predicate, prepare_bronze  # noqa: E402
+from mobility_lakehouse.contracts import HVFHV_SOURCE, SchemaContractError  # noqa: E402
 from mobility_lakehouse.tlc import Month  # noqa: E402
 
 if TYPE_CHECKING:
@@ -23,63 +25,14 @@ pytestmark = pytest.mark.spark
 JAN = Month.parse("2025-01")
 FEB = Month.parse("2025-02")
 JUN_2024 = Month.parse("2024-06")
-FIXED_TIME = datetime(2026, 10, 7, 12, 0, tzinfo=UTC)
-
-
-def trip_row(month: Month, n: int, fare: float = 20.0, with_cbd: bool = True) -> dict:
-    pickup = datetime(month.year, month.month, 1 + n % 27, 8, n % 60)
-    row = {
-        "hvfhs_license_num": "HV0003",
-        "dispatching_base_num": "B03404",
-        "originating_base_num": None,
-        "request_datetime": pickup,
-        "on_scene_datetime": None,
-        "pickup_datetime": pickup,
-        "dropoff_datetime": pickup.replace(hour=9),
-        "PULocationID": 1 + n % 265,
-        "DOLocationID": 1 + (n * 7) % 265,
-        "trip_miles": 3.5,
-        "trip_time": 3600,
-        "base_passenger_fare": fare,
-        "tolls": 0.0,
-        "bcf": 0.5,
-        "sales_tax": 1.6,
-        "congestion_surcharge": 2.75,
-        "airport_fee": 0.0,
-        "tips": 0.0,
-        "driver_pay": 15.0,
-        "shared_request_flag": "N",
-        "shared_match_flag": "N",
-        "access_a_ride_flag": "N",
-        "wav_request_flag": "N",
-        "wav_match_flag": "N",
-        "cbd_congestion_fee": 1.5,
-    }
-    if not with_cbd:
-        del row["cbd_congestion_fee"]
-    return row
-
-
-def raw_month(
-    spark: SparkSession,
-    month: Month,
-    rows: int,
-    fare: float = 20.0,
-    with_cbd: bool = True,
-) -> DataFrame:
-    columns = [c for c in HVFHV_SOURCE if with_cbd or c.name != "cbd_congestion_fee"]
-    data = [trip_row(month, n, fare, with_cbd) for n in range(rows)]
-    return spark.createDataFrame([tuple(r[c.name] for c in columns) for r in data], schema=ddl(columns))
 
 
 def load(spark: SparkSession, table: Path, month: Month, rows: int, **kwargs) -> None:
-    raw = raw_month(spark, month, rows, **kwargs)
-    bronze = prepare_bronze(raw, month, source_file=f"fhvhv_tripdata_{month}.parquet", ingested_at=FIXED_TIME)
-    write_bronze(bronze, month, path=str(table))
+    load_bronze(spark, table, month, rows, **kwargs)
 
 
 def read(spark: SparkSession, table: Path) -> DataFrame:
-    return spark.read.format("delta").load(str(table))
+    return read_delta(spark, table)
 
 
 def month_rows(spark: SparkSession, table: Path, month: Month, condition: str = "true") -> int:
