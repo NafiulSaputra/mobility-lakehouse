@@ -20,6 +20,14 @@ Commands are for Windows Command Prompt and use the Databricks CLI profile `mobi
    databricks volumes create workspace mobility raw MANAGED --profile mobility
    ```
 
+3. Create the folders inside the volume. `databricks fs cp` does not create missing folders in a volume and
+   fails with `no such directory`:
+
+   ```
+   databricks fs mkdir dbfs:/Volumes/workspace/mobility/raw/fhvhv --profile mobility
+   databricks fs mkdir dbfs:/Volumes/workspace/mobility/raw/reference --profile mobility
+   ```
+
 ## Every month
 
 1. Download the month and the zone lookup locally:
@@ -54,7 +62,15 @@ Commands are for Windows Command Prompt and use the Databricks CLI profile `mobi
    WHERE data_month = DATE'2025-01-01';
    ```
 
-   The trip counts must match the local run of the same month.
+   The trip counts must match the local run of the same month. To check every layer at once:
+
+   ```sql
+   SELECT 'bronze' AS layer, COUNT(*) AS row_count FROM workspace.mobility.bronze_fhvhv_trips
+   UNION ALL SELECT 'silver', COUNT(*) FROM workspace.mobility.silver_fhvhv_trips
+   UNION ALL SELECT 'quarantine', COUNT(*) FROM workspace.mobility.quarantine_fhvhv_trips
+   UNION ALL SELECT 'rule_counts', COUNT(*) FROM workspace.mobility.quality_fhvhv_rule_counts
+   UNION ALL SELECT 'gold_daily', COUNT(*) FROM workspace.mobility.gold_fhvhv_daily_company_trips;
+   ```
 
 ## Tables created
 
@@ -70,6 +86,7 @@ Commands are for Windows Command Prompt and use the Databricks CLI profile `mobi
 
 | Symptom | Likely cause | What to do |
 |---|---|---|
+| `fs cp` fails with `no such directory` | The folder does not exist in the volume | Run the `fs mkdir` commands of the one-time setup |
 | `bronze` fails with a path not found error | The raw file is not in the volume | Repeat step 2 for that month |
 | `silver` fails with "no bronze rows" | `bronze` did not run for that month | Rerun the whole job for the month |
 | The job runs old code after a change | Serverless reused a cached environment | Deploy again; `dynamic_version` gives each deploy a new wheel version |

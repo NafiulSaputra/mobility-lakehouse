@@ -1,6 +1,6 @@
 # 0009. Running the pipeline on Databricks
 
-- Status: Accepted, to be validated by the first Databricks run
+- Status: Accepted, validated on Databricks Free Edition
 - Date: 2026-10-07
 - Decider: Nafiul Hadi Saputra
 
@@ -40,6 +40,25 @@ targets, using Databricks Free Edition. The documented limits that shape the des
   first thing to automate if the source becomes reachable from Databricks.
 - Silver on Databricks costs more compute than locally because of the missing cache. If the daily quota
   becomes a problem, the first option is to stage evaluated rows in a temporary Delta table.
+
+## Validation
+
+Validated on 2026-10-07 with the January 2025 file on Databricks Free Edition (serverless, environment 5).
+The first run of the three tasks took about 3.5 minutes including compute start-up. Every count matches the
+local Docker run of the same month:
+
+| Measure | Local (Docker) | Databricks |
+|---|---|---|
+| Bronze rows | 20,405,666 | 20,405,666 |
+| Silver rows | 20,402,922 | 20,402,922 |
+| Quarantined rows (Q003 4, Q004 2,427, Q005 313) | 2,744 | 2,744 |
+| Rule count rows | 12 | 12 |
+| Gold daily company rows | 62 | 62 |
+| Uber / Lyft trips | 15,353,745 / 5,049,177 | 15,353,745 / 5,049,177 |
+
+The job was then run a second time for the same month. All table counts stayed the same, so the monthly
+overwrite (ADR 0003) is idempotent on Unity Catalog tables as well. The one fix needed was operational: the
+volume folders must be created before the first upload, which is now in the runbook.
 
 ## Alternatives considered
 

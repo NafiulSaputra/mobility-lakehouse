@@ -14,7 +14,7 @@ one is marked `Superseded`.
 | [0006](0006-data-quality-rules-and-silver-schema.md) | Data quality rules and silver schema | Accepted |
 | [0007](0007-explicit-bronze-schema-contract.md) | Explicit schema contract for bronze | Accepted |
 | [0008](0008-gold-tables.md) | Gold tables: one table per business question | Accepted |
-| [0009](0009-running-on-databricks.md) | Running the pipeline on Databricks | Accepted, to be validated by the first run |
+| [0009](0009-running-on-databricks.md) | Running the pipeline on Databricks | Accepted, validated on Databricks |
 
 ## Template
 
