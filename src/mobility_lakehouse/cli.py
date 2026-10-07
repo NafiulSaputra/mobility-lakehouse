@@ -1,7 +1,7 @@
 """Command line interface: ``mobility-lakehouse <command>``.
 
-    mobility-lakehouse download --month 2025-01      # works on any OS, no Spark needed
-    mobility-lakehouse profile  --month 2025-01      # needs Spark: run it inside Docker
+mobility-lakehouse download --month 2025-01      # works on any OS, no Spark needed
+mobility-lakehouse profile  --month 2025-01      # needs Spark: run it inside Docker
 """
 
 from __future__ import annotations
