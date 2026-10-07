@@ -10,6 +10,7 @@ one is marked `Superseded`.
 | [0002](0002-scope-hvfhv-2024-onwards.md) | Scope v0.1.0 to HVFHV data from January 2024 | Accepted |
 | [0003](0003-idempotent-monthly-partition-overwrite.md) | Idempotent runs through monthly partition overwrite | Accepted, to be validated in Sprint 1 |
 | [0004](0004-quarantine-failed-rows.md) | Quarantine rows that fail quality checks | Accepted |
+| [0005](0005-local-spark-in-docker-pinned-to-databricks.md) | Local Spark in Docker, pinned to Databricks serverless versions | Accepted |
 
 ## Template
 

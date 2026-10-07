@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from mobility-lakehouse!")
+"""mobility-lakehouse: Databricks lakehouse for NYC TLC ride-hailing trip data."""
