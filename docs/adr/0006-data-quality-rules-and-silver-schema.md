@@ -37,14 +37,15 @@ metrics in gold only describe completed trips, and they stay available for inspe
 | W001 | Pickup before request | `pickup_datetime < request_datetime` | 183,600 (0.91%) | 199,788 (0.98%) |
 | W002 | Zero distance | `trip_miles = 0` | 2,655 | 2,606 |
 | W003 | Zero base fare | `base_passenger_fare = 0` | 169 | 14,777 |
-| W004 | Very long trip | `trip_time > 21600` (6 hours) | not yet measured | not yet measured |
+| W004 | Very long trip | `trip_time > 21600` (6 hours) | 65 | 18 |
 | W005 | Candidate key collision | Same license, base, pickup, drop-off and zones as another row | 43 groups | 27 groups |
 
 W001 affects about 1% of trips in both months. A stable pattern at that rate is more likely a property of how
 times are reported than random corruption, so these trips stay in silver. The W004 threshold is a first choice
 (the 99th percentile of `trip_time` is about one hour); it only counts rows and can be tuned without data loss.
 
-Every run records, per month and per rule, how many rows matched. A sudden change in these counts is the
+Every run records, per month and per rule, how many rows matched. The silver implementation (Sprint 3)
+reproduced every count measured during profiling exactly; W004 was first measured there. A sudden change in these counts is the
 signal that the source changed.
 
 ### Silver schema decisions
