@@ -4,6 +4,7 @@ mobility-lakehouse download --month 2025-01      # works on any OS, no Spark nee
 mobility-lakehouse profile  --month 2025-01      # needs Spark: run it inside Docker
 mobility-lakehouse bronze   --month 2025-01      # needs Spark: run it inside Docker
 mobility-lakehouse silver   --month 2025-01      # needs Spark: run it inside Docker
+mobility-lakehouse gold     --month 2025-01      # needs Spark: run it inside Docker
 """
 
 from __future__ import annotations
@@ -58,6 +59,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_common(silver)
     _add_lakehouse(silver)
+
+    gold = commands.add_parser("gold", help="rebuild the gold tables for one silver month (safe to rerun)")
+    _add_common(gold)
+    _add_lakehouse(gold)
     return parser
 
 
@@ -182,6 +187,54 @@ def _run_silver(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_gold(args: argparse.Namespace) -> int:
+    from pyspark.sql import functions as F
+
+    from mobility_lakehouse.gold import GoldTargets, build_gold
+    from mobility_lakehouse.local_spark import create_local_spark
+
+    def gold_path(name: str) -> str:
+        return str(table_path(args.lakehouse_dir, "gold", f"{args.dataset}_{name}"))
+
+    silver_path = table_path(args.lakehouse_dir, "silver", f"{args.dataset}_trips")
+    targets = GoldTargets(
+        daily_company_trips=gold_path("daily_company_trips"),
+        hourly_pickup_zones=gold_path("hourly_pickup_zones"),
+        monthly_driver_economics=gold_path("monthly_driver_economics"),
+    )
+
+    spark = create_local_spark("mobility-lakehouse-gold")
+    try:
+        silver = spark.read.format("delta").load(str(silver_path))
+        silver_month = silver.where(F.col("data_month") == F.lit(args.month.start))
+        # Never replace a month with nothing: an empty input would erase that month in gold.
+        if silver_month.isEmpty():
+            print(f"No silver rows for {args.month}.")
+            print(f"Run first: mobility-lakehouse silver --month {args.month}")
+            return 1
+        build_gold(silver_month, args.month, targets)
+
+        print(f"Gold {args.month}:")
+        for name, path in vars(targets).items():
+            table = spark.read.format("delta").load(path)
+            rows = table.where(F.col("data_month") == F.lit(args.month.start)).count()
+            print(f"  {name:<26} {rows:>9,} rows")
+        economics = spark.read.format("delta").load(targets.monthly_driver_economics)
+        month_economics = economics.where(F.col("data_month") == F.lit(args.month.start))
+        top = month_economics.orderBy(F.col("trips").desc()).limit(10).collect()
+    finally:
+        spark.stop()
+
+    print("  Driver economics:")
+    for row in top:
+        print(
+            f"    {row['company']:<14} {row['trips']:>11,} trips  "
+            f"${row['driver_pay_per_mile']}/mile  ${row['driver_pay_per_minute']}/minute  "
+            f"driver share of base fare {row['driver_share_of_base_fare']}"
+        )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     commands = {
@@ -189,5 +242,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         "profile": _run_profile,
         "bronze": _run_bronze,
         "silver": _run_silver,
+        "gold": _run_gold,
     }
     return commands[args.command](args)

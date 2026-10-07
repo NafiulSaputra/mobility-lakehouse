@@ -11,6 +11,9 @@ flowchart LR
     B -->|silver| S["silver/fhvhv_trips"]
     B -->|silver| Q["quarantine/fhvhv_trips"]
     B -->|silver| C["quality/fhvhv_rule_counts"]
+    S -->|gold| G1["gold/fhvhv_daily_company_trips"]
+    S -->|gold| G2["gold/fhvhv_hourly_pickup_zones"]
+    S -->|gold| G3["gold/fhvhv_monthly_driver_economics"]
 ```
 
 ## bronze/fhvhv_trips
@@ -64,3 +67,39 @@ One row per rule per month. A sudden change in these counts is the signal that t
 | `total_rows` | bigint | Rows of the month in bronze |
 
 A row can match several rules, so `matched_rows` of different rules do not add up to the quarantine size.
+
+## gold/fhvhv_daily_company_trips
+
+Trips and money per pickup day per company ([ADR 0008](adr/0008-gold-tables.md)).
+
+| Column | Type | Notes |
+|---|---|---|
+| `data_month` | date | Partition column |
+| `trip_date` | date | Pickup date, New York local time |
+| `company` | string | Uber, Lyft, Juno, Via, or `Other (<code>)` |
+| `hvfhs_license_num` | string | Licensee code |
+| `trips` | bigint | |
+| `base_fare_total`, `tips_total`, `driver_pay_total` | double | Rounded to cents |
+| `passenger_paid_total` | double | Base fare plus every charge and tip |
+| `avg_trip_miles`, `avg_trip_minutes` | double | |
+
+## gold/fhvhv_hourly_pickup_zones
+
+| Column | Type | Notes |
+|---|---|---|
+| `data_month` | date | Partition column |
+| `pickup_date` | date | |
+| `pickup_hour` | int | 0-23, New York local time |
+| `PULocationID`, `pickup_borough`, `pickup_zone` | int, string, string | |
+| `trips` | bigint | |
+
+## gold/fhvhv_monthly_driver_economics
+
+| Column | Type | Notes |
+|---|---|---|
+| `data_month` | date | Partition column |
+| `company`, `hvfhs_license_num` | string | |
+| `trips` | bigint | |
+| `driver_pay_total`, `trip_miles_total`, `trip_minutes_total` | double | |
+| `driver_pay_per_mile`, `driver_pay_per_minute` | double | Ratio of totals; null when the denominator is 0 |
+| `driver_share_of_base_fare` | double | Total driver pay / total base fare |

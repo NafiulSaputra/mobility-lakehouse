@@ -13,6 +13,7 @@ one is marked `Superseded`.
 | [0005](0005-local-spark-in-docker-pinned-to-databricks.md) | Local Spark in Docker, pinned to Databricks serverless versions | Accepted |
 | [0006](0006-data-quality-rules-and-silver-schema.md) | Data quality rules and silver schema | Accepted |
 | [0007](0007-explicit-bronze-schema-contract.md) | Explicit schema contract for bronze | Accepted |
+| [0008](0008-gold-tables.md) | Gold tables: one table per business question | Accepted |
 
 ## Template
 
