@@ -1,0 +1,17 @@
+[project]
+name = "mobility-lakehouse"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Nafiul Hadi Saputra", email = "nafiulhadisaputraa@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+mobility-lakehouse = "mobility_lakehouse:main"
+
+[build-system]
+requires = ["uv_build>=0.12.22,<0.13.0"]
+build-backend = "uv_build"
