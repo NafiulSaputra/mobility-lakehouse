@@ -44,7 +44,7 @@ flowchart LR
 | Silver | Rows that passed every reject rule, with taxi zone names and their warning rule IDs | Overwrite one month per run |
 | Quarantine | Rows that failed at least one reject rule, with the rule IDs | Overwrite one month per run |
 | Rule counts | Rows matched per quality rule per month, to spot changes in the source | Overwrite one month per run |
-| Gold | Aggregated tables for analysis (defined in a later ADR) | Rebuilt from silver |
+| Gold | Daily trips per company, hourly busy zones, monthly driver economics | Rebuilt from silver, one month per run |
 
 Column-level details: [docs/data-model.md](docs/data-model.md).
 
@@ -61,6 +61,7 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 | [0005](docs/adr/0005-local-spark-in-docker-pinned-to-databricks.md) | Develop locally with Spark in Docker, pinned to Databricks serverless versions |
 | [0006](docs/adr/0006-data-quality-rules-and-silver-schema.md) | Quality rules (7 reject, 5 warning) and silver schema, based on profiling two months |
 | [0007](docs/adr/0007-explicit-bronze-schema-contract.md) | Bronze follows an explicit schema contract; unknown source columns stop the load |
+| [0008](docs/adr/0008-gold-tables.md) | Gold has one table per business question; ratios are computed from totals |
 
 ## Roadmap
 
@@ -71,7 +72,8 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 - [x] Sprint 1: local Spark + Delta in Docker, sample data, data profiling reports ([2024-06](docs/profiling/fhvhv_2024-06.md), [2025-01](docs/profiling/fhvhv_2025-01.md))
 - [x] Sprint 2: bronze ingestion with idempotency tests, run in CI on every pull request
 - [x] Sprint 3: silver quality rules, quarantine table and per-rule quality counts ([data model](docs/data-model.md))
-- [ ] Sprint 4: gold tables and deployment to Databricks with Asset Bundles
+- [x] Sprint 4a: gold tables (daily trips per company, hourly busy zones, monthly driver economics)
+- [ ] Sprint 4b: run the pipeline on Databricks with Asset Bundles, release v0.1.0
 
 ### Later stages (target: v1.0)
 
@@ -108,6 +110,7 @@ docker compose build spark                                      # once, or after
 docker compose run --rm spark mobility-lakehouse profile --month 2025-01
 docker compose run --rm spark mobility-lakehouse bronze --month 2025-01    # safe to rerun
 docker compose run --rm spark mobility-lakehouse silver --month 2025-01    # quality rules, safe to rerun
+docker compose run --rm spark mobility-lakehouse gold --month 2025-01      # gold tables, safe to rerun
 docker compose run --rm spark pytest -m spark                              # Spark tests
 ```
 
