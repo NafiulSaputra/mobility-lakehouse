@@ -24,7 +24,7 @@ Run Spark locally in a Docker container (`docker/spark/Dockerfile`, started with
 | Component | Version | Reason |
 |---|---|---|
 | Python | 3.12 | Serverless environment version 5 |
-| PySpark | 4.1.3 | Latest patch of Spark 4.1, the Spark line of Databricks Runtime 18 |
+| PySpark | 4.1.1 | Spark 4.1, the Spark line of Databricks Runtime 18. Newest 4.1 patch allowed by delta-spark 4.3.1, which requires `pyspark>=4.0.1,<=4.1.1` |
 | delta-spark | 4.3.1 | Supports Spark 4.1.x |
 | Java | 21 | Default JDK of Databricks Runtime 18 |
 
@@ -42,6 +42,8 @@ The Delta Lake jars are downloaded when the image is built, so containers start 
   open-source releases, so local runs are close to Databricks but not identical. Final verification
   happens on Databricks (Sprint 4).
 - When Databricks moves to a new environment version, this ADR and the pinned versions must be reviewed.
+- PySpark cannot be upgraded on its own: delta-spark pins the PySpark versions it supports, and `uv.lock`
+  enforces that. Upgrades happen as a pair.
 
 ## Alternatives considered
 
