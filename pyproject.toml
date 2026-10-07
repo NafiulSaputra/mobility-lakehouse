@@ -31,3 +31,11 @@ addopts = ["-ra", "--strict-markers"]
 [tool.pipeline-lint]
 sql-dialect = "databricks"
 fail-on = "warning"
+
+[dependency-groups]
+dev = [
+    "pipeline-lint>=0.1.0",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "ruff>=0.16.10",
+]
