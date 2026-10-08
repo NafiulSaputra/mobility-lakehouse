@@ -2,6 +2,7 @@
 #   docker compose build spark
 #   docker compose run --rm spark mobility-lakehouse profile --month 2025-01
 #   docker compose up --build api        # API on http://localhost:8000, documentation on /docs
+#   docker compose up -d redpanda        # Kafka-compatible broker for the streaming replay (ADR 0012)
 services:
   spark:
     build:
@@ -27,3 +28,20 @@ services:
       - ./data/snapshot:/data/snapshot:ro
     ports:
       - "8000:8000"
+
+  # Single-node Redpanda for the streaming replay (ADR 0012). Containers reach it at redpanda:9092.
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=1G
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10

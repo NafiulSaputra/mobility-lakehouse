@@ -28,7 +28,7 @@ RUN uv sync --locked --group spark --no-install-project
 COPY src ./src
 RUN uv sync --locked --group spark
 
-# Download the Delta Lake jars once at build time, so containers start fast and work offline.
-RUN python -c "from mobility_lakehouse.local_spark import create_local_spark; create_local_spark().stop()"
+# Download the Delta Lake and Kafka connector jars once at build time, so containers start fast and work offline.
+RUN python -c "from mobility_lakehouse.local_spark import create_local_spark; create_local_spark(kafka=True).stop()"
 
 CMD ["bash"]
