@@ -11,13 +11,16 @@ Streaming (ADR 0012), inside Docker with Redpanda running (docker compose up -d 
 mobility-lakehouse replay-extract --date 2025-01-15   # one day of silver trips -> event files
 mobility-lakehouse replay --date 2025-01-15           # event files -> Redpanda, with late events
 mobility-lakehouse stream --until-caught-up           # Redpanda -> trips per zone and 15 minutes (Delta)
+mobility-lakehouse reconcile --date 2025-01-15        # stream vs batch gold, report in docs/reports
+mobility-lakehouse stream-reset                       # delete the topic, stream results and checkpoint
 """
 
 from __future__ import annotations
 
 import argparse
+import uuid
 from collections.abc import Sequence
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from mobility_lakehouse.pipeline import Layout, MissingInputError, local_layout
@@ -125,6 +128,21 @@ def build_parser() -> argparse.ArgumentParser:
     stream.add_argument("--max-offsets-per-trigger", type=int, default=50_000, help="events per micro-batch")
     _add_streaming(stream)
     _add_kafka(stream)
+
+    reconcile = commands.add_parser(
+        "reconcile", help="compare the stream with batch gold for one replayed day and write a report"
+    )
+    reconcile.add_argument("--date", required=True, type=_date, help="replayed day, YYYY-MM-DD")
+    reconcile.add_argument(
+        "--report-dir", type=Path, default=Path("docs/reports"), help="where to write the Markdown report"
+    )
+    _add_streaming(reconcile)
+
+    reset = commands.add_parser(
+        "stream-reset", help="delete the topic, the stream results, the run log and the checkpoint"
+    )
+    _add_streaming(reset)
+    _add_kafka(reset)
     return parser
 
 
@@ -303,11 +321,14 @@ def _run_stream(args: argparse.Namespace) -> int:
     from mobility_lakehouse.streaming import (
         kafka_events,
         local_streaming_paths,
+        record_run,
         start_pickup_stream,
         summarize_run,
     )
 
     paths = local_streaming_paths(args.data_dir, args.lakehouse_dir)
+    run_id = str(uuid.uuid4())
+    started_at = datetime.now(UTC).replace(tzinfo=None)
     spark = create_local_spark("mobility-lakehouse-stream", kafka=True)
     # Keep the progress of every micro-batch of this run, to add up the late rows dropped.
     spark.conf.set("spark.sql.streaming.numRecentProgressUpdates", "100000")
@@ -319,14 +340,70 @@ def _run_stream(args: argparse.Namespace) -> int:
         except KeyboardInterrupt:
             query.stop()
         summary = summarize_run(spark, query, paths.table)
+        record_run(spark, paths.runs, run_id, started_at, datetime.now(UTC).replace(tzinfo=None), summary)
     finally:
         spark.stop()
 
     print(
         f"Stream: {summary.batches} micro-batches, {summary.input_rows:,} events read, "
         f"{summary.dropped_late_rows:,} dropped as too late (watermark 30 minutes)\n"
-        f"Table {paths.table}: {summary.windows:,} windows, {summary.trips:,} trips"
+        f"Table {paths.table}: {summary.windows:,} windows, {summary.trips:,} trips\n"
+        f"Run {run_id} recorded in {paths.runs}"
     )
+    return 0
+
+
+def _run_reconcile(args: argparse.Namespace) -> int:
+    from mobility_lakehouse.local_spark import create_local_spark
+    from mobility_lakehouse.reconcile import (
+        batch_hourly,
+        compare,
+        dropped_in_runs,
+        render_report,
+        stream_hourly,
+        summary_lines,
+    )
+    from mobility_lakehouse.streaming import local_streaming_paths
+
+    layout = local_layout(args.data_dir, args.lakehouse_dir)
+    paths = local_streaming_paths(args.data_dir, args.lakehouse_dir)
+    for folder, step in ((paths.table, "stream"), (paths.runs, "stream")):
+        if not Path(folder).exists():
+            print(f"Not found: {folder}\nRun first: mobility-lakehouse {step} --until-caught-up")
+            return 1
+
+    spark = create_local_spark("mobility-lakehouse-reconcile")
+    try:
+        batch = batch_hourly(spark, layout.gold.hourly_pickup_zones, args.date)
+        stream = stream_hourly(spark, paths.table, args.date)
+        dropped, runs = dropped_in_runs(spark, paths.runs)
+    finally:
+        spark.stop()
+
+    if not batch:
+        print(f"No batch gold for {args.date}. Run gold for {args.date:%Y-%m} first.")
+        return 1
+    result = compare(args.date, batch, stream, dropped, runs)
+    args.report_dir.mkdir(parents=True, exist_ok=True)
+    report = args.report_dir / f"streaming_reconciliation_{args.date}.md"
+    report.write_text(render_report(result), encoding="utf-8")
+    print("\n".join(summary_lines(result)))
+    print(f"Report written to {report}")
+    return 0 if result.reconciled else 1
+
+
+def _run_stream_reset(args: argparse.Namespace) -> int:
+    import shutil
+
+    from mobility_lakehouse.replay import delete_topic
+    from mobility_lakehouse.streaming import local_streaming_paths
+
+    paths = local_streaming_paths(args.data_dir, args.lakehouse_dir)
+    print(delete_topic(args.bootstrap, args.topic))
+    for folder in (paths.table, paths.runs, paths.checkpoint):
+        if Path(folder).exists():
+            shutil.rmtree(folder)
+            print(f"Deleted {folder}")
     return 0
 
 
@@ -342,5 +419,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "replay-extract": _run_replay_extract,
         "replay": _run_replay,
         "stream": _run_stream,
+        "reconcile": _run_reconcile,
+        "stream-reset": _run_stream_reset,
     }
     return commands[args.command](args)

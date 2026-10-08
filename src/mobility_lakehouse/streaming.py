@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from mobility_lakehouse.delta_io import PARTITION_COLUMN, Table
 
 if TYPE_CHECKING:
-    from datetime import date
+    from datetime import date, datetime
 
     from pyspark.sql import DataFrame, SparkSession
     from pyspark.sql.streaming import StreamingQuery
@@ -34,6 +34,7 @@ class StreamingPaths:
     events_dir: str  # replay input, partitioned by event_date
     table: str  # Delta table with trips per window and zone
     checkpoint: str  # Spark checkpoint: offsets read, watermark and aggregation state
+    runs: str  # Delta table with one row per stream run: events read and late rows dropped
 
 
 def local_streaming_paths(data_dir: Path, lakehouse_dir: Path, dataset: str = "fhvhv") -> StreamingPaths:
@@ -41,6 +42,7 @@ def local_streaming_paths(data_dir: Path, lakehouse_dir: Path, dataset: str = "f
         events_dir=(data_dir / "replay" / f"{dataset}_events").as_posix(),
         table=(lakehouse_dir / "streaming" / f"{dataset}_pickups_15min").as_posix(),
         checkpoint=(lakehouse_dir / "_checkpoints" / f"{dataset}_pickups_15min").as_posix(),
+        runs=(lakehouse_dir / "streaming" / f"{dataset}_stream_runs").as_posix(),
     )
 
 
@@ -191,3 +193,36 @@ def summarize_run(spark: SparkSession, query: StreamingQuery, table_path: str) -
         row = totals.first()
         windows, trips = int(row["windows"]), int(row["trips"] or 0)
     return StreamSummary(len(progress), input_rows, dropped_by_watermark(progress), windows, trips)
+
+
+RUNS_SCHEMA = (
+    "run_id string, started_at timestamp, finished_at timestamp, batches int, "
+    "input_rows bigint, dropped_late_rows bigint"
+)
+
+
+def record_run(
+    spark: SparkSession,
+    runs_path: str,
+    run_id: str,
+    started_at: datetime,
+    finished_at: datetime,
+    summary: StreamSummary,
+) -> None:
+    """Keep one row per stream run. Recording the same run again replaces its row."""
+    from delta.tables import DeltaTable
+
+    row = spark.createDataFrame(
+        [(run_id, started_at, finished_at, summary.batches, summary.input_rows, summary.dropped_late_rows)],
+        schema=RUNS_SCHEMA,
+    )
+    if not DeltaTable.isDeltaTable(spark, runs_path):
+        row.limit(0).write.format("delta").save(runs_path)
+    (
+        DeltaTable.forPath(spark, runs_path)
+        .alias("t")
+        .merge(row.alias("s"), "t.run_id = s.run_id")
+        .whenMatchedUpdateAll()
+        .whenNotMatchedInsertAll()
+        .execute()
+    )
