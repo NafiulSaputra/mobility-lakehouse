@@ -18,6 +18,7 @@ one is marked `Superseded`.
 | [0010](0010-data-quality-dashboard.md) | Data quality dashboard on Databricks AI/BI | Accepted |
 | [0011](0011-api-over-a-parquet-snapshot.md) | Serve the API from a Parquet snapshot with DuckDB | Accepted |
 | [0012](0012-streaming-replay-with-watermark.md) | Streaming: replay through Redpanda, 30-minute watermark, reconciled with batch | Accepted |
+| [0013](0013-benchmark-methodology.md) | Benchmark methodology | Accepted |
 
 ## Template
 

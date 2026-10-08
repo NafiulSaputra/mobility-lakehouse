@@ -4,7 +4,10 @@ All notable changes to this project are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.0] - 2026-10-08
+
+The full lakehouse: batch on Databricks, a data quality dashboard, an API, a reconciled stream and
+repeatable benchmarks.
 
 ### Added
 
@@ -22,6 +25,8 @@ All notable changes to this project are listed here. The format follows
 - Stream run log and `reconcile`: trips per zone and hour in the stream are compared with batch gold for the
   replayed day; the trips missing from the stream must equal the late rows Spark dropped. Report in
   `docs/reports`. `stream-reset` deletes the topic, results and checkpoint.
+- Benchmarks (ADR 0013): `benchmark` times every local step over several repeats; `databricks-timings`
+  summarizes job runs from the Databricks run history; reports in `docs/benchmarks`.
 
 ## [0.1.0] - 2026-10-08
 
@@ -44,4 +49,5 @@ First release: a batch lakehouse for NYC TLC High Volume For-Hire Vehicle trips,
 
 - January 2025 gives identical counts locally and on Databricks Free Edition, and a rerun changes nothing.
 
+[1.0.0]: https://github.com/NafiulSaputra/mobility-lakehouse/releases/tag/v1.0.0
 [0.1.0]: https://github.com/NafiulSaputra/mobility-lakehouse/releases/tag/v0.1.0

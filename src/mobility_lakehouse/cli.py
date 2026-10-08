@@ -13,6 +13,10 @@ mobility-lakehouse replay --date 2025-01-15           # event files -> Redpanda,
 mobility-lakehouse stream --until-caught-up           # Redpanda -> trips per zone and 15 minutes (Delta)
 mobility-lakehouse reconcile --date 2025-01-15        # stream vs batch gold, report in docs/reports
 mobility-lakehouse stream-reset                       # delete the topic, stream results and checkpoint
+
+Benchmarks (ADR 0013):
+mobility-lakehouse benchmark --month 2025-01 --repeats 3    # needs Spark: report in docs/benchmarks
+mobility-lakehouse databricks-timings --runs-json runs.json # no Spark: job run history -> docs/benchmarks
 """
 
 from __future__ import annotations
@@ -143,6 +147,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_streaming(reset)
     _add_kafka(reset)
+
+    benchmark = commands.add_parser(
+        "benchmark", help="time bronze, silver, gold and snapshot for one month, several times"
+    )
+    _add_common(benchmark)
+    _add_lakehouse(benchmark)
+    benchmark.add_argument("--repeats", type=int, default=3, help="how many times to run every step")
+    benchmark.add_argument("--report-dir", type=Path, default=Path("docs/benchmarks"), help="report folder")
+
+    timings = commands.add_parser(
+        "databricks-timings", help="summarize job runs from `databricks jobs list-runs --output json`"
+    )
+    timings.add_argument("--runs-json", required=True, type=Path, help="file with the list-runs output")
+    timings.add_argument("--report-dir", type=Path, default=Path("docs/benchmarks"), help="report folder")
     return parser
 
 
@@ -407,6 +425,61 @@ def _run_stream_reset(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_benchmark(args: argparse.Namespace) -> int:
+    from mobility_lakehouse.benchmark import (
+        format_seconds,
+        read_stream_runs,
+        render_local,
+        run_local_benchmark,
+        streaming_throughput,
+    )
+    from mobility_lakehouse.local_spark import create_local_spark
+    from mobility_lakehouse.streaming import local_streaming_paths
+
+    source = local_path(args.data_dir, args.dataset, args.month)
+    if not source.exists():
+        print(f"File not found: {source}\nRun first: mobility-lakehouse download --month {args.month}")
+        return 1
+
+    layout = _local(args)
+    spark = create_local_spark("mobility-lakehouse-benchmark")
+    try:
+        result = run_local_benchmark(spark, layout, args.month, args.repeats)
+        stream_runs = read_stream_runs(spark, local_streaming_paths(args.data_dir, args.lakehouse_dir).runs)
+    finally:
+        spark.stop()
+
+    args.report_dir.mkdir(parents=True, exist_ok=True)
+    report = args.report_dir / f"local_{args.month}.md"
+    report.write_text(render_local(result, streaming_throughput(stream_runs)), encoding="utf-8")
+    for step in ("bronze", "silver", "gold", "snapshot"):
+        s = result.step_stats(step)
+        print(
+            f"{step:<9} median {format_seconds(s.median):>8}  (min {format_seconds(s.minimum)}, max "
+            f"{format_seconds(s.maximum)})"
+        )
+    print(f"Report written to {report}")
+    return 0
+
+
+def _run_databricks_timings(args: argparse.Namespace) -> int:
+    import json
+
+    from mobility_lakehouse.benchmark import format_seconds, parse_databricks_runs, render_databricks
+
+    runs = parse_databricks_runs(json.loads(args.runs_json.read_text(encoding="utf-8-sig")))
+    if not runs:
+        print(f"No successful runs in {args.runs_json}")
+        return 1
+    args.report_dir.mkdir(parents=True, exist_ok=True)
+    report = args.report_dir / "databricks.md"
+    report.write_text(render_databricks(runs), encoding="utf-8")
+    for run in runs:
+        print(f"{run.started}  month {run.month}  {format_seconds(run.seconds)}")
+    print(f"{len(runs)} successful runs. Report written to {report}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     commands = {
@@ -421,5 +494,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "stream": _run_stream,
         "reconcile": _run_reconcile,
         "stream-reset": _run_stream_reset,
+        "benchmark": _run_benchmark,
+        "databricks-timings": _run_databricks_timings,
     }
     return commands[args.command](args)
