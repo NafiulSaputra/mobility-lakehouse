@@ -101,3 +101,17 @@ def test_snapshot_refuses_to_run_before_gold(spark: SparkSession, tmp_path: Path
 
     with pytest.raises(MissingInputError, match="no gold rows for 2025-02"):
         run_snapshot(spark, layout, FEB)
+
+
+def test_local_benchmark_runs_every_step_on_each_repeat(spark: SparkSession, tmp_path: Path) -> None:
+    from mobility_lakehouse.benchmark import LOCAL_STEPS, run_local_benchmark
+
+    layout = prepare_inputs(spark, tmp_path, persist=True)
+
+    result = run_local_benchmark(spark, layout, JAN, repeats=2)
+
+    assert [(t.repeat, t.step) for t in result.timings] == [(r, s) for r in (1, 2) for s in LOCAL_STEPS]
+    assert all(t.seconds > 0 for t in result.timings)
+    # Reruns replace the month: the second repeat ends with the same rows as the first.
+    assert result.rows["bronze"] == 7
+    assert result.rows["silver"] == 6
