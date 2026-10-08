@@ -7,8 +7,8 @@ Incremental, idempotent bronze/silver/gold pipelines with Delta Lake, explicit d
 CI/CD, and architecture decision records.
 
 > **Status: v0.1.0, batch lakehouse complete.** Bronze, silver and gold run locally in Docker and as a
-> Databricks job, with the same results on both. A data quality dashboard and an HTTP API are done; the
-> streaming stage is planned for v1.0
+> Databricks job, with the same results on both. A data quality dashboard, an HTTP API and a
+> streaming replay are done; benchmarks and v1.0 are next
 > (see the [roadmap](#roadmap)). Changes per release are in the [changelog](CHANGELOG.md).
 
 ## The problem
@@ -39,6 +39,9 @@ flowchart LR
     S --> D
     G --> P["Snapshot<br/>Parquet per month"]
     P --> A["FastAPI + DuckDB"]
+    S --> R["Replay<br/>one day, late events"]
+    R --> K["Redpanda"]
+    K --> ST["Spark Structured Streaming<br/>15-min windows, 30-min watermark"]
 ```
 
 | Layer | Contains | Write strategy |
@@ -100,6 +103,21 @@ curl "http://localhost:8000/drivers/economics?month=2025-03"
 Bad input gets a clear status code: `422` for a badly written month, an hour outside 0 to 23 or a date range
 longer than 92 days, and `404` for a month that is not in the snapshot.
 
+## Streaming
+
+One day of silver trips is replayed through Redpanda faster than real time, with 2% of the events sent up to
+90 minutes late and out of order. Spark Structured Streaming counts trips per pickup zone and 15-minute window
+with a 30-minute watermark and merges the results into Delta
+([ADR 0012](docs/adr/0012-streaming-replay-with-watermark.md)).
+
+- An event up to 30 minutes late is still counted in its window; an older one is dropped, and the number of
+  dropped events is reported, so every missing trip is explained.
+- The replay uses a fixed seed, so the same command always produces the same stream.
+- A Spark test checks the watermark: a late event inside it updates its window, an older one is dropped and
+  counted, and a run without new events changes nothing.
+
+Step by step: [docs/streaming.md](docs/streaming.md).
+
 ## Key decisions
 
 Every significant decision is recorded as an Architecture Decision Record in [`docs/adr`](docs/adr/).
@@ -117,6 +135,7 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 | [0009](docs/adr/0009-running-on-databricks.md) | The same pipeline steps run locally and as a Databricks Asset Bundle job on serverless |
 | [0010](docs/adr/0010-data-quality-dashboard.md) | A Databricks AI/BI dashboard shows quality rule rates per month and flags spikes |
 | [0011](docs/adr/0011-api-over-a-parquet-snapshot.md) | The API reads a Parquet snapshot of gold with DuckDB instead of querying Databricks |
+| [0012](docs/adr/0012-streaming-replay-with-watermark.md) | Streaming replays a day through Redpanda; a 30-minute watermark decides which late events count |
 
 ## Roadmap
 
@@ -135,13 +154,14 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 - [x] Sprint 5: data quality dashboard on Databricks AI/BI, deployed with the bundle, six months loaded
 - [ ] Business dashboard pages on the gold tables
 - [x] Sprint 6: FastAPI service over a Parquet snapshot of gold, read with DuckDB, tested in CI
-- [ ] Stage 4: simulated streaming (replay of historical trips through Redpanda) with late-data handling
+- [x] Sprint 7: streaming replay through Redpanda with late events, Spark Structured Streaming with a 30-minute watermark
+- [ ] Sprint 8: reconcile the stream with batch gold, live replay demo
 - [ ] Benchmarks with documented, repeatable methodology
 
 ## Tech stack
 
 Python 3.12 · PySpark 4.1 · Delta Lake 4.3 · Databricks (Free Edition, serverless) · Databricks Asset Bundles ·
-Databricks AI/BI · FastAPI · DuckDB · Docker · uv · pytest · ruff · [pipeline-lint](https://github.com/NafiulSaputra/pipeline-lint) · GitHub Actions
+Databricks AI/BI · FastAPI · DuckDB · Redpanda · Docker · uv · pytest · ruff · [pipeline-lint](https://github.com/NafiulSaputra/pipeline-lint) · GitHub Actions
 
 Python 3.12 matches Databricks serverless environment version 5.
 

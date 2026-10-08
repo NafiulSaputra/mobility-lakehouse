@@ -13,13 +13,22 @@ if TYPE_CHECKING:
     from pyspark.sql import SparkSession
 
 
+def kafka_package() -> str:
+    """Maven coordinate of the Spark Kafka connector that matches the installed PySpark (Scala 2.13)."""
+    import pyspark
+
+    return f"org.apache.spark:spark-sql-kafka-0-10_2.13:{pyspark.__version__}"
+
+
 def create_local_spark(
     app_name: str = "mobility-lakehouse",
     driver_memory: str | None = None,
+    kafka: bool = False,
 ) -> SparkSession:
     """Create (or reuse) a local SparkSession with Delta Lake enabled.
 
-    ``driver_memory`` defaults to the SPARK_DRIVER_MEMORY environment variable, then 3g.
+    ``driver_memory`` defaults to the SPARK_DRIVER_MEMORY environment variable, then 3g. ``kafka=True`` adds
+    the Kafka connector for streaming from Redpanda (ADR 0012).
     """
     from delta import configure_spark_with_delta_pip
     from pyspark.sql import SparkSession
@@ -37,4 +46,5 @@ def create_local_spark(
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
     )
-    return configure_spark_with_delta_pip(builder).getOrCreate()
+    extra = [kafka_package()] if kafka else []
+    return configure_spark_with_delta_pip(builder, extra_packages=extra).getOrCreate()

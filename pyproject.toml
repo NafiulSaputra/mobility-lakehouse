@@ -48,7 +48,9 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.16.10",
 ]
+# Local Spark in Docker and the streaming tools that run next to it (ADR 0005, 0012).
 spark = [
+    "confluent-kafka>=2.6",
     "delta-spark==4.3.1",
     "pyspark==4.1.1",
 ]

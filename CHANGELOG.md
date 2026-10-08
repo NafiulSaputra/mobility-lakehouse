@@ -16,6 +16,9 @@ All notable changes to this project are listed here. The format follows
   monthly job and a separate `export_snapshot` job (ADR 0011).
 - FastAPI service over the snapshot, read with DuckDB: driver economics, daily trips, busiest zones and the
   quality summary, with input validation, OpenAPI documentation and a Docker image.
+- Streaming replay (ADR 0012): one day of silver trips sent to Redpanda faster than real time, with a seeded
+  share of late and out-of-order events; Spark Structured Streaming counts trips per pickup zone and
+  15-minute window with a 30-minute watermark, merges results into Delta and reports late rows dropped.
 
 ## [0.1.0] - 2026-10-08
 

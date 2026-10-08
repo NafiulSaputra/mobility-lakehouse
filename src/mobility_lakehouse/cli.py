@@ -6,12 +6,18 @@ mobility-lakehouse bronze   --month 2025-01      # needs Spark: run it inside Do
 mobility-lakehouse silver   --month 2025-01      # needs Spark: run it inside Docker
 mobility-lakehouse gold     --month 2025-01      # needs Spark: run it inside Docker
 mobility-lakehouse snapshot --month 2025-01      # needs Spark: Parquet tables for the API (data/snapshot)
+
+Streaming (ADR 0012), inside Docker with Redpanda running (docker compose up -d redpanda):
+mobility-lakehouse replay-extract --date 2025-01-15   # one day of silver trips -> event files
+mobility-lakehouse replay --date 2025-01-15           # event files -> Redpanda, with late events
+mobility-lakehouse stream --until-caught-up           # Redpanda -> trips per zone and 15 minutes (Delta)
 """
 
 from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from datetime import date
 from pathlib import Path
 
 from mobility_lakehouse.pipeline import Layout, MissingInputError, local_layout
@@ -30,6 +36,23 @@ def _month(text: str) -> Month:
         return Month.parse(text)
     except ValueError as error:
         raise argparse.ArgumentTypeError(str(error)) from None
+
+
+def _date(text: str) -> date:
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid date {text!r}: expected YYYY-MM-DD") from None
+
+
+def _add_streaming(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--data-dir", type=Path, default=Path("data"), help="local data folder")
+    _add_lakehouse(parser)
+
+
+def _add_kafka(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--bootstrap", default="redpanda:9092", help="Kafka/Redpanda bootstrap servers")
+    parser.add_argument("--topic", default="trips", help="topic with the trip events")
 
 
 def _add_common(parser: argparse.ArgumentParser) -> None:
@@ -71,6 +94,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_common(snapshot)
     _add_lakehouse(snapshot)
+
+    extract = commands.add_parser(
+        "replay-extract", help="write the silver trips of one day as replay events (safe to rerun)"
+    )
+    extract.add_argument("--date", required=True, type=_date, help="pickup day, YYYY-MM-DD")
+    _add_streaming(extract)
+
+    replay = commands.add_parser("replay", help="send one day of events to Redpanda, faster than real time")
+    replay.add_argument("--date", required=True, type=_date, help="pickup day, YYYY-MM-DD")
+    replay.add_argument(
+        "--speed", type=float, default=600.0, help="times faster than real time (default 600)"
+    )
+    replay.add_argument("--late-fraction", type=float, default=0.02, help="share of events sent late")
+    replay.add_argument("--max-delay-minutes", type=float, default=90.0, help="longest delay of a late event")
+    replay.add_argument(
+        "--seed", type=int, default=7, help="random seed: the same seed gives the same replay"
+    )
+    _add_streaming(replay)
+    _add_kafka(replay)
+
+    stream = commands.add_parser(
+        "stream", help="count trips per pickup zone and 15-minute window from Redpanda"
+    )
+    stream.add_argument(
+        "--until-caught-up",
+        action="store_true",
+        help="process the events already in the topic, then stop (default: run live until Ctrl+C)",
+    )
+    stream.add_argument("--max-offsets-per-trigger", type=int, default=50_000, help="events per micro-batch")
+    _add_streaming(stream)
+    _add_kafka(stream)
     return parser
 
 
@@ -197,6 +251,85 @@ def _run_snapshot(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_replay_extract(args: argparse.Namespace) -> int:
+    from mobility_lakehouse.local_spark import create_local_spark
+    from mobility_lakehouse.streaming import extract_replay_day, local_streaming_paths
+
+    layout = local_layout(args.data_dir, args.lakehouse_dir)
+    paths = local_streaming_paths(args.data_dir, args.lakehouse_dir)
+    spark = create_local_spark("mobility-lakehouse-replay-extract")
+    try:
+        rows = extract_replay_day(spark, layout.silver.silver, args.date, paths.events_dir)
+    finally:
+        spark.stop()
+
+    if rows == 0:
+        print(f"No silver trips on {args.date}. Build silver for {args.date:%Y-%m} first.")
+        return 1
+    print(f"Replay events {args.date}: {rows:,} trips written to {paths.events_dir}")
+    return 0
+
+
+def _run_replay(args: argparse.Namespace) -> int:
+    from mobility_lakehouse.replay import KafkaSender, plan_replay, read_events, replay, summarize_plan
+    from mobility_lakehouse.streaming import local_streaming_paths
+
+    paths = local_streaming_paths(args.data_dir, args.lakehouse_dir)
+    try:
+        events = read_events(Path(paths.events_dir), args.date)
+    except FileNotFoundError as error:
+        print(error)
+        return 1
+
+    planned = plan_replay(events, args.late_fraction, args.max_delay_minutes, args.seed)
+    plan = summarize_plan(planned)
+    hours = (planned[-1].send_time - planned[0].send_time).total_seconds() / 3600 if planned else 0
+    print(
+        f"Replaying {plan.events:,} events of {args.date} to {args.topic} at {args.speed:g}x "
+        f"(about {hours * 3600 / args.speed / 60:.1f} minutes): {plan.late_events:,} late, "
+        f"{plan.beyond_watermark:,} more than 30 minutes late"
+    )
+    sender = KafkaSender(args.bootstrap, args.topic)
+    try:
+        replay(planned, sender, args.speed)
+    finally:
+        sender.close()
+    print(f"Sent {sender.sent:,} events.")
+    return 0
+
+
+def _run_stream(args: argparse.Namespace) -> int:
+    from mobility_lakehouse.local_spark import create_local_spark
+    from mobility_lakehouse.streaming import (
+        kafka_events,
+        local_streaming_paths,
+        start_pickup_stream,
+        summarize_run,
+    )
+
+    paths = local_streaming_paths(args.data_dir, args.lakehouse_dir)
+    spark = create_local_spark("mobility-lakehouse-stream", kafka=True)
+    # Keep the progress of every micro-batch of this run, to add up the late rows dropped.
+    spark.conf.set("spark.sql.streaming.numRecentProgressUpdates", "100000")
+    try:
+        events = kafka_events(spark, args.bootstrap, args.topic, args.max_offsets_per_trigger)
+        query = start_pickup_stream(events, paths, until_caught_up=args.until_caught_up)
+        try:
+            query.awaitTermination()
+        except KeyboardInterrupt:
+            query.stop()
+        summary = summarize_run(spark, query, paths.table)
+    finally:
+        spark.stop()
+
+    print(
+        f"Stream: {summary.batches} micro-batches, {summary.input_rows:,} events read, "
+        f"{summary.dropped_late_rows:,} dropped as too late (watermark 30 minutes)\n"
+        f"Table {paths.table}: {summary.windows:,} windows, {summary.trips:,} trips"
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     commands = {
@@ -206,5 +339,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "silver": _run_silver,
         "gold": _run_gold,
         "snapshot": _run_snapshot,
+        "replay-extract": _run_replay_extract,
+        "replay": _run_replay,
+        "stream": _run_stream,
     }
     return commands[args.command](args)
