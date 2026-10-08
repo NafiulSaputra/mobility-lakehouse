@@ -1,4 +1,5 @@
 # Databricks Asset Bundle: builds the project wheel and defines the monthly pipeline job (ADR 0009).
+# The data quality dashboard (ADR 0010) is defined in resources/.
 #
 #   databricks bundle validate --profile mobility
 #   databricks bundle deploy   --profile mobility
@@ -9,6 +10,9 @@
 bundle:
   name: mobility-lakehouse
 
+include:
+  - resources/*.yml
+
 variables:
   catalog:
     description: Unity Catalog catalog that holds the schema
@@ -16,6 +20,10 @@ variables:
   schema:
     description: Unity Catalog schema for the tables and the raw volume
     default: mobility
+  warehouse_id:
+    description: SQL warehouse that runs the dashboard queries, found by name so no workspace ID is committed
+    lookup:
+      warehouse: Serverless Starter Warehouse
 
 artifacts:
   default:

@@ -4,6 +4,15 @@ All notable changes to this project are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Data quality dashboard on Databricks AI/BI: rows checked and quarantined per month, rule match rates, spikes
+  against the previous month, and quarantined rows per reject rule (ADR 0010).
+- The dashboard is deployed with the Asset Bundle; its SQL datasets are kept in `dashboards/queries` and tested.
+- January to June 2025 loaded on Databricks.
+
 ## [0.1.0] - 2026-10-08
 
 First release: a batch lakehouse for NYC TLC High Volume For-Hire Vehicle trips, January 2024 onwards.

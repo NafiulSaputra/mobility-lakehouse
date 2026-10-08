@@ -7,7 +7,8 @@ Incremental, idempotent bronze/silver/gold pipelines with Delta Lake, explicit d
 CI/CD, and architecture decision records.
 
 > **Status: v0.1.0, batch lakehouse complete.** Bronze, silver and gold run locally in Docker and as a
-> Databricks job, with the same results on both. The dashboard, API and streaming stages are planned for v1.0
+> Databricks job, with the same results on both. A data quality dashboard is done; the API and streaming stages
+> are planned for v1.0
 > (see the [roadmap](#roadmap)). Changes per release are in the [changelog](CHANGELOG.md).
 
 ## The problem
@@ -34,7 +35,8 @@ flowchart LR
     B --> S["Silver<br/>typed, checked, zone names joined"]
     B --> Q["Quarantine<br/>failed rows + failure reason"]
     S --> G["Gold<br/>analysis-ready aggregates"]
-    G --> D["Dashboard (planned)"]
+    Q --> D["Quality dashboard<br/>rule rates + spikes"]
+    S --> D
     G --> A["API (planned)"]
 ```
 
@@ -62,6 +64,19 @@ January 2025 (20.4 million trips), run locally in Docker and on Databricks Free 
 The Databricks job (bronze, silver, gold) took 3 minutes 17 seconds, including compute start-up. Running the
 same month a second time left every table count unchanged. Details: [ADR 0009](docs/adr/0009-running-on-databricks.md).
 
+### Data quality dashboard
+
+January to June 2025 on Databricks AI/BI. The dashboard is defined as code in
+[`dashboards/`](dashboards/) and deployed with the Asset Bundle ([ADR 0010](docs/adr/0010-data-quality-dashboard.md)).
+
+![Data quality dashboard](docs/images/quality-dashboard.png)
+
+- About 121 million rows checked, about 5,200 quarantined (0.004%).
+- January 2025 had the most quarantined rows (2,744), mostly negative base fares (rule Q004).
+- Two spikes in six months. One of them: rule W003 (zero base fare) matched 0.006% of rows in February
+  and 0.31% in March, about 50 times more. No step failed, because W003 is a warning: the change was only
+  visible by comparing months, which is what the dashboard is for.
+
 ## Key decisions
 
 Every significant decision is recorded as an Architecture Decision Record in [`docs/adr`](docs/adr/).
@@ -77,6 +92,7 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 | [0007](docs/adr/0007-explicit-bronze-schema-contract.md) | Bronze follows an explicit schema contract; unknown source columns stop the load |
 | [0008](docs/adr/0008-gold-tables.md) | Gold has one table per business question; ratios are computed from totals |
 | [0009](docs/adr/0009-running-on-databricks.md) | The same pipeline steps run locally and as a Databricks Asset Bundle job on serverless |
+| [0010](docs/adr/0010-data-quality-dashboard.md) | A Databricks AI/BI dashboard shows quality rule rates per month and flags spikes |
 
 ## Roadmap
 
@@ -92,7 +108,8 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 
 ### Later stages (target: v1.0)
 
-- [ ] Stage 2: dashboard on the gold tables
+- [x] Sprint 5: data quality dashboard on Databricks AI/BI, deployed with the bundle, six months loaded
+- [ ] Business dashboard pages on the gold tables
 - [ ] Stage 3: FastAPI service serving gold metrics
 - [ ] Stage 4: simulated streaming (replay of historical trips through Redpanda) with late-data handling
 - [ ] Benchmarks with documented, repeatable methodology
