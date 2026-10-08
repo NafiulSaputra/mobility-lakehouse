@@ -54,6 +54,12 @@ Commands are for Windows Command Prompt and use the Databricks CLI profile `mobi
 
    The job runs three tasks in order: `bronze`, `silver`, `gold`. Rerunning a month replaces that month only.
 
+   Several months, one after the other (Command Prompt; the job allows one run at a time):
+
+   ```
+   for %m in (2025-02 2025-03 2025-04) do databricks bundle run monthly_pipeline --profile mobility --params month=%m
+   ```
+
 4. Check the result in the SQL editor:
 
    ```sql

@@ -77,6 +77,7 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 | [0007](docs/adr/0007-explicit-bronze-schema-contract.md) | Bronze follows an explicit schema contract; unknown source columns stop the load |
 | [0008](docs/adr/0008-gold-tables.md) | Gold has one table per business question; ratios are computed from totals |
 | [0009](docs/adr/0009-running-on-databricks.md) | The same pipeline steps run locally and as a Databricks Asset Bundle job on serverless |
+| [0010](docs/adr/0010-data-quality-dashboard.md) | A Databricks AI/BI dashboard shows quality rule rates per month and flags spikes |
 
 ## Roadmap
 
