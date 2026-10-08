@@ -35,7 +35,14 @@ sql-dialect = "databricks"
 fail-on = "warning"
 
 [dependency-groups]
+# The API runs outside Databricks, so its libraries are not dependencies of the job wheel (ADR 0011).
+api = [
+    "duckdb>=1.1",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+]
 dev = [
+    "httpx>=0.28",
     "pipeline-lint>=0.1.0",
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
@@ -45,3 +52,8 @@ spark = [
     "delta-spark==4.3.1",
     "pyspark==4.1.1",
 ]
+
+[tool.uv]
+# `uv sync` installs the API libraries too, so the API tests run with the rest. The Databricks wheel does not
+# include them.
+default-groups = ["dev", "api"]

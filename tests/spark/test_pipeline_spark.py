@@ -1,4 +1,4 @@
-"""End to end: raw file -> bronze -> silver -> gold through the shared pipeline steps (ADR 0009).
+"""End to end: raw file -> bronze -> silver -> gold -> API snapshot through the shared steps (ADR 0009, 0011).
 
 The same steps run on Databricks with Unity Catalog tables. Running them here with ``persist=False`` covers
 the Databricks code path, where DataFrame caching is not available.
@@ -24,6 +24,7 @@ from mobility_lakehouse.pipeline import (  # noqa: E402
     run_bronze,
     run_gold,
     run_silver,
+    run_snapshot,
 )
 from mobility_lakehouse.tlc import Month  # noqa: E402
 
@@ -69,3 +70,34 @@ def test_a_step_refuses_to_run_before_its_input_exists(spark: SparkSession, tmp_
 
     with pytest.raises(MissingInputError, match="no bronze rows for 2025-02"):
         run_silver(spark, layout, FEB)
+
+
+def test_snapshot_is_safe_to_rerun_and_readable_by_the_api(spark: SparkSession, tmp_path: Path) -> None:
+    layout = prepare_inputs(spark, tmp_path, persist=False)
+    run_bronze(spark, layout, JAN)
+    run_silver(spark, layout, JAN)
+    run_gold(spark, layout, JAN)
+
+    first = run_snapshot(spark, layout, JAN)
+    second = run_snapshot(spark, layout, JAN)
+
+    assert first == second  # rerunning a month replaces it instead of adding rows
+    assert (first["monthly_driver_economics"], first["quality_months"]) == (1, 1)
+
+    # The API reads exactly what Spark wrote.
+    store_module = pytest.importorskip("mobility_lakehouse.api.store")
+    store = store_module.SnapshotStore(Path(layout.snapshot_dir))
+    assert store.months() == [JAN.start]
+    assert [(r["company"], r["trips"]) for r in store.driver_economics(JAN.start)] == [("Uber", 6)]
+    quality = store.quality()
+    assert (quality[0]["rows_checked"], quality[0]["rows_quarantined"]) == (7, 1)
+
+
+def test_snapshot_refuses_to_run_before_gold(spark: SparkSession, tmp_path: Path) -> None:
+    layout = prepare_inputs(spark, tmp_path, persist=True)
+    run_bronze(spark, layout, JAN)
+    run_silver(spark, layout, JAN)
+    run_gold(spark, layout, JAN)
+
+    with pytest.raises(MissingInputError, match="no gold rows for 2025-02"):
+        run_snapshot(spark, layout, FEB)

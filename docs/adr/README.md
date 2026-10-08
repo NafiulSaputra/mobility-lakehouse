@@ -16,6 +16,7 @@ one is marked `Superseded`.
 | [0008](0008-gold-tables.md) | Gold tables: one table per business question | Accepted |
 | [0009](0009-running-on-databricks.md) | Running the pipeline on Databricks | Accepted, validated on Databricks |
 | [0010](0010-data-quality-dashboard.md) | Data quality dashboard on Databricks AI/BI | Accepted |
+| [0011](0011-api-over-a-parquet-snapshot.md) | Serve the API from a Parquet snapshot with DuckDB | Accepted |
 
 ## Template
 

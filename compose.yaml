@@ -1,6 +1,7 @@
 # Local development services.
 #   docker compose build spark
 #   docker compose run --rm spark mobility-lakehouse profile --month 2025-01
+#   docker compose up --build api        # API on http://localhost:8000, documentation on /docs
 services:
   spark:
     build:
@@ -15,3 +16,14 @@ services:
       SPARK_DRIVER_MEMORY: ${SPARK_DRIVER_MEMORY:-3g}
     ports:
       - "4040:4040" # Spark UI while a job runs: http://localhost:4040
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    image: mobility-lakehouse-api:local
+    volumes:
+      # Read-only: the API never changes the snapshot (ADR 0011).
+      - ./data/snapshot:/data/snapshot:ro
+    ports:
+      - "8000:8000"
