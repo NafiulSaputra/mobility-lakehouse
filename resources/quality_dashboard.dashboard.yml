@@ -1,0 +1,9 @@
+# Data quality dashboard (ADR 0010). The layout lives in dashboards/quality_dashboard.lvdash.json and was
+# exported from the Databricks editor with `databricks bundle generate dashboard`.
+resources:
+  dashboards:
+    quality_dashboard:
+      display_name: mobility-lakehouse data quality
+      file_path: ../dashboards/quality_dashboard.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      embed_credentials: true

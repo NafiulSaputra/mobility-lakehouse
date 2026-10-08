@@ -1,0 +1,673 @@
+{
+  "datasets": [
+    {
+      "displayName": "monthly_summary",
+      "name": "db0972e1",
+      "queryLines": [
+        "-- Quality dashboard (ADR 0010): one row per month.\r\n",
+        "-- Rows checked come from the rule counts table, rows quarantined from the quarantine table.\r\n",
+        "WITH checked AS (\r\n",
+        "    SELECT\r\n",
+        "        data_month,\r\n",
+        "        MAX(total_rows) AS rows_checked\r\n",
+        "    FROM workspace.mobility.quality_fhvhv_rule_counts\r\n",
+        "    GROUP BY data_month\r\n",
+        "),\r\n",
+        "\r\n",
+        "quarantined AS (\r\n",
+        "    SELECT\r\n",
+        "        data_month,\r\n",
+        "        COUNT(*) AS rows_quarantined\r\n",
+        "    FROM workspace.mobility.quarantine_fhvhv_trips\r\n",
+        "    GROUP BY data_month\r\n",
+        ")\r\n",
+        "\r\n",
+        "SELECT\r\n",
+        "    c.data_month,\r\n",
+        "    c.rows_checked,\r\n",
+        "    COALESCE(q.rows_quarantined, 0) AS rows_quarantined,\r\n",
+        "    c.rows_checked - COALESCE(q.rows_quarantined, 0) AS rows_in_silver,\r\n",
+        "    TRY_DIVIDE(COALESCE(q.rows_quarantined, 0), c.rows_checked) AS quarantine_rate\r\n",
+        "FROM checked AS c\r\n",
+        "LEFT JOIN quarantined AS q\r\n",
+        "    ON c.data_month = q.data_month\r\n",
+        "ORDER BY c.data_month\r\n"
+      ]
+    },
+    {
+      "displayName": "rule_rates",
+      "name": "c441ef67",
+      "queryLines": [
+        "-- Quality dashboard (ADR 0010): one row per month and rule, with the change against the previous month.\r\n",
+        "-- A rule is flagged as a spike when its rate is at least twice the previous month's rate and it matched at\r\n",
+        "-- least 100 rows, so that a jump from 1 row to 3 rows is not reported.\r\n",
+        "WITH rates AS (\r\n",
+        "    SELECT\r\n",
+        "        data_month,\r\n",
+        "        rule_id,\r\n",
+        "        severity,\r\n",
+        "        description,\r\n",
+        "        matched_rows,\r\n",
+        "        total_rows,\r\n",
+        "        TRY_DIVIDE(matched_rows, total_rows) AS match_rate\r\n",
+        "    FROM workspace.mobility.quality_fhvhv_rule_counts\r\n",
+        "),\r\n",
+        "\r\n",
+        "with_previous AS (\r\n",
+        "    SELECT\r\n",
+        "        data_month,\r\n",
+        "        rule_id,\r\n",
+        "        severity,\r\n",
+        "        description,\r\n",
+        "        matched_rows,\r\n",
+        "        total_rows,\r\n",
+        "        match_rate,\r\n",
+        "        LAG(match_rate) OVER (PARTITION BY rule_id ORDER BY data_month) AS previous_match_rate\r\n",
+        "    FROM rates\r\n",
+        ")\r\n",
+        "\r\n",
+        "SELECT\r\n",
+        "    data_month,\r\n",
+        "    rule_id,\r\n",
+        "    severity,\r\n",
+        "    description,\r\n",
+        "    matched_rows,\r\n",
+        "    total_rows,\r\n",
+        "    match_rate,\r\n",
+        "    previous_match_rate,\r\n",
+        "    TRY_DIVIDE(match_rate, previous_match_rate) AS rate_vs_previous_month,\r\n",
+        "    COALESCE(\r\n",
+        "        matched_rows >= 100 AND match_rate >= 2 * previous_match_rate,\r\n",
+        "        FALSE\r\n",
+        "    ) AS is_spike\r\n",
+        "FROM with_previous\r\n",
+        "ORDER BY data_month, rule_id\r\n"
+      ]
+    },
+    {
+      "displayName": "quarantine_by_company",
+      "name": "a95db73b",
+      "queryLines": [
+        "-- Quality dashboard (ADR 0010): quarantined rows per month, reject rule and company.\r\n",
+        "-- A row that fails two rules is counted once for each rule.\r\n",
+        "-- Company names follow the gold mapping (ADR 0008); unknown codes are kept as \"Other (<code>)\".\r\n",
+        "SELECT\r\n",
+        "    data_month,\r\n",
+        "    failed_rule AS rule_id,\r\n",
+        "    CASE hvfhs_license_num\r\n",
+        "        WHEN 'HV0002' THEN 'Juno'\r\n",
+        "        WHEN 'HV0003' THEN 'Uber'\r\n",
+        "        WHEN 'HV0004' THEN 'Via'\r\n",
+        "        WHEN 'HV0005' THEN 'Lyft'\r\n",
+        "        ELSE CONCAT('Other (', hvfhs_license_num, ')')\r\n",
+        "    END AS company,\r\n",
+        "    COUNT(*) AS rows_quarantined\r\n",
+        "FROM workspace.mobility.quarantine_fhvhv_trips\r\n",
+        "LATERAL VIEW EXPLODE(failed_rules) AS failed_rule\r\n",
+        "GROUP BY data_month, failed_rule, hvfhs_license_num\r\n",
+        "ORDER BY data_month, rule_id, company\r\n"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "displayName": "Data quality",
+      "layout": [
+        {
+          "position": {
+            "height": 6,
+            "width": 6,
+            "x": 0,
+            "y": 2
+          },
+          "widget": {
+            "name": "rows-checked",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "db0972e1",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "SUM(`rows_checked`)",
+                      "name": "sum(rows_checked)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(rows_checked)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "fields": [],
+                  "value": "   Rows checked"
+                }
+              },
+              "version": 2,
+              "widgetType": "counter"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 2,
+            "width": 12,
+            "x": 0,
+            "y": 0
+          },
+          "widget": {
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Data quality: NYC ride-hailing, January to June 2025\n",
+                "\n",
+                "Every month is checked by 7 reject rules and 5 warning rules (ADR 0006). A **spike** is a rule whose match rate is at least twice the previous month's rate, with at least 100 rows (ADR 0010)."
+              ]
+            },
+            "name": "3758a137"
+          }
+        },
+        {
+          "position": {
+            "height": 6,
+            "width": 6,
+            "x": 6,
+            "y": 2
+          },
+          "widget": {
+            "name": "rows-quarantined",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "db0972e1",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "SUM(`rows_quarantined`)",
+                      "name": "sum(rows_quarantined)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(rows_quarantined)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "fields": [],
+                  "value": "Rows quarantined"
+                }
+              },
+              "version": 2,
+              "widgetType": "counter"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 6,
+            "width": 6,
+            "x": 0,
+            "y": 8
+          },
+          "widget": {
+            "name": "rule-spikes",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "c441ef67",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "COUNT(`*`)",
+                      "name": "count(*)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`is_spike` IN (TRUE)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "value": {
+                  "fieldName": "count(*)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "fields": [],
+                  "value": "Rule spikes"
+                }
+              },
+              "version": 2,
+              "widgetType": "counter"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 6,
+            "width": 6,
+            "x": 6,
+            "y": 8
+          },
+          "widget": {
+            "name": "share-rows-quarantined-per-month",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "db0972e1",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "DATE_TRUNC(\"MONTH\", `data_month`)",
+                      "name": "monthly(data_month)"
+                    },
+                    {
+                      "expression": "SUM(`quarantine_rate`)",
+                      "name": "sum(quarantine_rate)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "x": {
+                  "fieldName": "monthly(data_month)",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(quarantine_rate)",
+                  "format": {
+                    "decimalPlaces": {
+                      "places": 3,
+                      "type": "max"
+                    },
+                    "type": "number-percent"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "fields": [],
+                  "value": "Share of rows quarantined per month"
+                }
+              },
+              "version": 3,
+              "widgetType": "bar"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 6,
+            "width": 6,
+            "x": 0,
+            "y": 14
+          },
+          "widget": {
+            "name": "reject-rules-share-rows-matched",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "c441ef67",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "`rule_id`",
+                      "name": "rule_id"
+                    },
+                    {
+                      "expression": "DATE_TRUNC(\"MONTH\", `data_month`)",
+                      "name": "monthly(data_month)"
+                    },
+                    {
+                      "expression": "SUM(`match_rate`)",
+                      "name": "sum(match_rate)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`severity` IN ('warning')"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "color": {
+                  "fieldName": "rule_id",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "x": {
+                  "fieldName": "monthly(data_month)",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(match_rate)",
+                  "format": {
+                    "decimalPlaces": {
+                      "places": 3,
+                      "type": "max"
+                    },
+                    "type": "number-percent"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "fields": [],
+                  "value": "   Warning rules: share of rows matched"
+                }
+              },
+              "version": 3,
+              "widgetType": "line"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 6,
+            "width": 6,
+            "x": 6,
+            "y": 14
+          },
+          "widget": {
+            "name": "reject-rules-share-rows-matched1",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "c441ef67",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "`rule_id`",
+                      "name": "rule_id"
+                    },
+                    {
+                      "expression": "DATE_TRUNC(\"MONTH\", `data_month`)",
+                      "name": "monthly(data_month)"
+                    },
+                    {
+                      "expression": "SUM(`match_rate`)",
+                      "name": "sum(match_rate)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`severity` IN ('reject')"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "color": {
+                  "fieldName": "rule_id",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "x": {
+                  "fieldName": "monthly(data_month)",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(match_rate)",
+                  "format": {
+                    "decimalPlaces": {
+                      "places": 3,
+                      "type": "max"
+                    },
+                    "type": "number-percent"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "fields": [],
+                  "value": "   Reject rules: share of rows matched"
+                }
+              },
+              "version": 3,
+              "widgetType": "line"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 6,
+            "width": 6,
+            "x": 0,
+            "y": 20
+          },
+          "widget": {
+            "name": "spikes-rules-twice-last-months-rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "c441ef67",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "expression": "`data_month`",
+                      "name": "data_month"
+                    },
+                    {
+                      "expression": "`rule_id`",
+                      "name": "rule_id"
+                    },
+                    {
+                      "expression": "`description`",
+                      "name": "description"
+                    },
+                    {
+                      "expression": "`matched_rows`",
+                      "name": "matched_rows"
+                    },
+                    {
+                      "expression": "`match_rate`",
+                      "name": "match_rate"
+                    },
+                    {
+                      "expression": "`previous_match_rate`",
+                      "name": "previous_match_rate"
+                    },
+                    {
+                      "expression": "`rate_vs_previous_month`",
+                      "name": "rate_vs_previous_month"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`is_spike` IN (TRUE)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "data_month"
+                  },
+                  {
+                    "fieldName": "rule_id"
+                  },
+                  {
+                    "fieldName": "description"
+                  },
+                  {
+                    "fieldName": "matched_rows"
+                  },
+                  {
+                    "fieldName": "match_rate"
+                  },
+                  {
+                    "fieldName": "previous_match_rate"
+                  },
+                  {
+                    "fieldName": "rate_vs_previous_month"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "fields": [],
+                  "value": "   Spikes: rules at least twice last month's rate"
+                }
+              },
+              "version": 2,
+              "widgetType": "table"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 6,
+            "width": 6,
+            "x": 6,
+            "y": 20
+          },
+          "widget": {
+            "name": "quarantined-rows-reject-rule",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "a95db73b",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "`rule_id`",
+                      "name": "rule_id"
+                    },
+                    {
+                      "expression": "DATE_TRUNC(\"MONTH\", `data_month`)",
+                      "name": "monthly(data_month)"
+                    },
+                    {
+                      "expression": "SUM(`rows_quarantined`)",
+                      "name": "sum(rows_quarantined)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "color": {
+                  "fieldName": "rule_id",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "x": {
+                  "fieldName": "monthly(data_month)",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(rows_quarantined)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "fields": [],
+                  "value": "   Quarantined rows per reject rule"
+                }
+              },
+              "version": 3,
+              "widgetType": "bar"
+            }
+          }
+        }
+      ],
+      "layoutVersion": "GRID_V1",
+      "name": "8f4d8975",
+      "pageType": "PAGE_TYPE_CANVAS"
+    }
+  ],
+  "uiSettings": {
+    "applyModeEnabled": false,
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    }
+  }
+}

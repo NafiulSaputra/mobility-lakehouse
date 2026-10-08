@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from mobility_lakehouse.quality import RULES
 
 QUERIES = Path(__file__).resolve().parents[1] / "dashboards" / "queries"
 QUERY_FILES = sorted(QUERIES.glob("*.sql"))
+DASHBOARD = QUERIES.parent / "quality_dashboard.lvdash.json"
 TABLE_REFERENCE = re.compile(r"\bworkspace\.mobility\.(\w+)")
 
 
@@ -34,6 +36,17 @@ def test_queries_only_read_tables_the_pipeline_writes(query: Path) -> None:
 
     assert referenced, f"{query.name} reads no pipeline table"
     assert not unknown, f"unknown tables in {query.name}: {unknown}"
+
+
+def test_dashboard_file_only_reads_tables_the_pipeline_writes() -> None:
+    # The exported dashboard embeds its own copy of the queries, so it is checked like the SQL files.
+    datasets = json.loads(DASHBOARD.read_text(encoding="utf-8"))["datasets"]
+    sql = "\n".join("".join(dataset.get("queryLines", [])) for dataset in datasets)
+    referenced = {f"workspace.mobility.{name}" for name in TABLE_REFERENCE.findall(sql)}
+
+    assert len(datasets) == len(QUERY_FILES)
+    assert referenced, "the dashboard reads no pipeline table"
+    assert not referenced - _pipeline_tables()
 
 
 def test_quarantine_query_maps_every_company_like_gold() -> None:

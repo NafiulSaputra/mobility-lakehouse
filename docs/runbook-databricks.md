@@ -78,6 +78,21 @@ Commands are for Windows Command Prompt and use the Databricks CLI profile `mobi
    UNION ALL SELECT 'gold_daily', COUNT(*) FROM workspace.mobility.gold_fhvhv_daily_company_trips;
    ```
 
+## Data quality dashboard
+
+The dashboard (ADR 0010) is deployed with the bundle, next to the job:
+
+```
+databricks bundle deploy --profile mobility
+```
+
+It appears under **Dashboards** with a `[dev <user>]` prefix while the `dev` target is used. To change it, edit
+the deployed dashboard in the Databricks editor, then export the change back into the repository and commit it:
+
+```
+databricks bundle generate dashboard --resource quality_dashboard --force --profile mobility
+```
+
 ## Tables created
 
 | Layer | Table |
@@ -97,4 +112,5 @@ Commands are for Windows Command Prompt and use the Databricks CLI profile `mobi
 | `silver` fails with "no bronze rows" | `bronze` did not run for that month | Rerun the whole job for the month |
 | The job runs old code after a change | Serverless reused a cached environment | Deploy again; `dynamic_version` gives each deploy a new wheel version |
 | Compute is unavailable for the rest of the day | The Free Edition daily quota was exceeded | Wait until the next day; run one month at a time |
+| `bundle validate` cannot find the warehouse | The SQL warehouse has another name | Pass `--var warehouse_id=<id>`, or change the lookup in `databricks.yml` |
 | `bundle deploy` fails on `uv build` | uv is not on the PATH of this terminal | Open a new Command Prompt and check `uv --version` |
