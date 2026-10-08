@@ -12,6 +12,7 @@ from mobility_lakehouse.pipeline import (
     gold_summary,
     local_layout,
     silver_summary,
+    snapshot_summary,
 )
 from mobility_lakehouse.silver import RuleCount, SilverResult
 from mobility_lakehouse.tlc import Month
@@ -34,6 +35,7 @@ def test_local_layout_uses_folders() -> None:
     assert layout.zones_file == "data/raw/reference/taxi_zone_lookup.csv"
     assert layout.bronze == Table(path="data/lakehouse/bronze/fhvhv_trips")
     assert layout.gold.daily_company_trips == Table(path="data/lakehouse/gold/fhvhv_daily_company_trips")
+    assert layout.snapshot_dir == "data/snapshot"
     assert layout.persist is True
 
 
@@ -47,6 +49,7 @@ def test_catalog_layout_uses_unity_catalog_tables_and_a_volume() -> None:
     assert layout.gold.monthly_driver_economics == Table(
         name="workspace.mobility.gold_fhvhv_monthly_driver_economics"
     )
+    assert layout.snapshot_dir == "/Volumes/workspace/mobility/serving/snapshot"
     # Databricks serverless does not support DataFrame caching (ADR 0009).
     assert layout.persist is False
 
@@ -54,13 +57,18 @@ def test_catalog_layout_uses_unity_catalog_tables_and_a_volume() -> None:
 def test_job_arguments() -> None:
     args = job_parser().parse_args(["silver", "--month", "2024-06", "--catalog", "main", "--schema", "taxi"])
 
-    assert (args.step, str(args.month), args.catalog, args.schema, args.volume) == (
+    assert (args.step, str(args.month), args.catalog, args.schema, args.volume, args.serving_volume) == (
         "silver",
         "2024-06",
         "main",
         "taxi",
         "raw",
+        "serving",
     )
+
+
+def test_job_has_a_snapshot_step() -> None:
+    assert job_parser().parse_args(["snapshot", "--month", "2025-03"]).step == "snapshot"
 
 
 def test_job_rejects_unknown_steps() -> None:
@@ -80,6 +88,13 @@ def test_silver_summary_lists_every_rule() -> None:
     assert lines[0] == "Silver 2025-01: 1,000 bronze rows"
     assert "990 (99.0000%)" in lines[1]
     assert lines[3].strip().startswith("Q004 Negative base fare")
+
+
+def test_snapshot_summary_lists_every_table() -> None:
+    lines = snapshot_summary(JAN, {"quality_months": 1, "hourly_pickup_zones": 187_018}, "data/snapshot")
+
+    assert lines[0] == "Snapshot 2025-01 in data/snapshot:"
+    assert "187,018 rows" in lines[2]
 
 
 def test_gold_summary_shows_driver_economics() -> None:

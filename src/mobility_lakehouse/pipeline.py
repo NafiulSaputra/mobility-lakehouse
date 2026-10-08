@@ -1,7 +1,7 @@
 """The pipeline steps, shared by the local CLI and the Databricks job (ADR 0009).
 
 A ``Layout`` says where the raw files and the tables live: local folders inside Docker, or a Unity Catalog
-schema and volume on Databricks. The steps themselves are identical in both places.
+schema and volumes on Databricks. The steps themselves are identical in both places.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ class Layout:
     bronze: Table
     silver: SilverTargets
     gold: GoldTargets
+    snapshot_dir: str  # Parquet tables read by the API (ADR 0011)
     persist: bool = True  # Databricks serverless does not support DataFrame caching
 
     def raw_file(self, month: Month) -> str:
@@ -62,12 +63,19 @@ def local_layout(data_dir: Path, lakehouse_dir: Path, dataset: str = "fhvhv") ->
             hourly_pickup_zones=table("gold", "hourly_pickup_zones"),
             monthly_driver_economics=table("gold", "monthly_driver_economics"),
         ),
+        snapshot_dir=(data_dir / "snapshot").as_posix(),
         persist=True,
     )
 
 
-def catalog_layout(catalog: str, schema: str, dataset: str = "fhvhv", volume: str = "raw") -> Layout:
-    """Unity Catalog tables and a volume for raw files, used on Databricks."""
+def catalog_layout(
+    catalog: str,
+    schema: str,
+    dataset: str = "fhvhv",
+    volume: str = "raw",
+    serving_volume: str = "serving",
+) -> Layout:
+    """Unity Catalog tables, a volume for raw files and a volume for the API snapshot, used on Databricks."""
 
     def table(layer: str, name: str) -> Table:
         return Table(name=f"{catalog}.{schema}.{layer}_{dataset}_{name}")
@@ -86,6 +94,7 @@ def catalog_layout(catalog: str, schema: str, dataset: str = "fhvhv", volume: st
             hourly_pickup_zones=table("gold", "hourly_pickup_zones"),
             monthly_driver_economics=table("gold", "monthly_driver_economics"),
         ),
+        snapshot_dir=f"/Volumes/{catalog}/{schema}/{serving_volume}/snapshot",
         persist=False,
     )
 
@@ -143,6 +152,37 @@ def run_gold(spark: SparkSession, layout: Layout, month: Month) -> GoldSummary:
     return GoldSummary(rows, [row.asDict() for row in top])
 
 
+def run_snapshot(spark: SparkSession, layout: Layout, month: Month) -> dict[str, int]:
+    """Copy one month of gold and quality counts into the Parquet snapshot read by the API (ADR 0011).
+
+    Returns the number of rows of that month in every snapshot table, read back after writing.
+    """
+    from pyspark.sql import functions as F
+
+    from mobility_lakehouse.snapshot import quality_months_frame, write_snapshot_table
+
+    economics = _month_of(layout.gold.monthly_driver_economics.read(spark), month)
+    if economics.isEmpty():
+        raise MissingInputError(f"no gold rows for {month}; run the gold step first")
+
+    rule_counts = _month_of(layout.silver.rule_counts.read(spark), month)
+    checked = rule_counts.agg(F.max("total_rows").alias("rows")).first()
+    quarantined = _month_of(layout.silver.quarantine.read(spark), month).count()
+    frames = {
+        "daily_company_trips": _month_of(layout.gold.daily_company_trips.read(spark), month),
+        "hourly_pickup_zones": _month_of(layout.gold.hourly_pickup_zones.read(spark), month),
+        "monthly_driver_economics": economics,
+        "rule_counts": rule_counts,
+        "quality_months": quality_months_frame(spark, month.start, int(checked["rows"] or 0), quarantined),
+    }
+
+    rows = {}
+    for name, frame in frames.items():
+        write_snapshot_table(frame, layout.snapshot_dir, name)
+        rows[name] = _month_of(spark.read.parquet(f"{layout.snapshot_dir}/{name}"), month).count()
+    return rows
+
+
 # ---------------------------------------------------------------------------------------------
 # Summaries: plain Python, shared by the CLI and the Databricks job logs.
 # ---------------------------------------------------------------------------------------------
@@ -161,6 +201,12 @@ def silver_summary(month: Month, result: SilverResult) -> list[str]:
         label = f"{count.rule_id} {count.description}"
         matched = f"{count.matched_rows:>12,} ({share(count.matched_rows)})"
         lines.append(f"  {label:<40} {matched} [{count.severity}]")
+    return lines
+
+
+def snapshot_summary(month: Month, rows: dict[str, int], snapshot_dir: str) -> list[str]:
+    lines = [f"Snapshot {month} in {snapshot_dir}:"]
+    lines += [f"  {name:<26} {count:>9,} rows" for name, count in rows.items()]
     return lines
 
 

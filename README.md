@@ -7,8 +7,8 @@ Incremental, idempotent bronze/silver/gold pipelines with Delta Lake, explicit d
 CI/CD, and architecture decision records.
 
 > **Status: v0.1.0, batch lakehouse complete.** Bronze, silver and gold run locally in Docker and as a
-> Databricks job, with the same results on both. A data quality dashboard is done; the API and streaming stages
-> are planned for v1.0
+> Databricks job, with the same results on both. A data quality dashboard and an HTTP API are done; the
+> streaming stage is planned for v1.0
 > (see the [roadmap](#roadmap)). Changes per release are in the [changelog](CHANGELOG.md).
 
 ## The problem
@@ -37,7 +37,8 @@ flowchart LR
     S --> G["Gold<br/>analysis-ready aggregates"]
     Q --> D["Quality dashboard<br/>rule rates + spikes"]
     S --> D
-    G --> A["API (planned)"]
+    G --> P["Snapshot<br/>Parquet per month"]
+    P --> A["FastAPI + DuckDB"]
 ```
 
 | Layer | Contains | Write strategy |
@@ -73,9 +74,31 @@ January to June 2025 on Databricks AI/BI. The dashboard is defined as code in
 
 - About 121 million rows checked, about 5,200 quarantined (0.004%).
 - January 2025 had the most quarantined rows (2,744), mostly negative base fares (rule Q004).
-- Two spikes in six months. One of them: rule W003 (zero base fare) matched 0.006% of rows in February
-  and 0.31% in March, about 50 times more. No step failed, because W003 is a warning: the change was only
-  visible by comparing months, which is what the dashboard is for.
+- Two spikes in six months, both from rule W003 (zero base fare): it matched about 50 times its February
+  rate in March (63,828 rows) and about 98 times its May rate in June (12,414 rows). No step failed,
+  because W003 is a warning: the change was only visible by comparing months, which is what the dashboard
+  is for.
+
+## API
+
+A FastAPI service serves gold metrics and the quality summary from a Parquet snapshot, read with DuckDB
+([ADR 0011](docs/adr/0011-api-over-a-parquet-snapshot.md)). It needs no Spark and no Databricks connection.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /health` | Status and the months in the snapshot |
+| `GET /drivers/economics?month=2025-03` | Driver pay per mile and per minute, per company |
+| `GET /trips/daily?start=2025-03-01&end=2025-03-31` | Trips, fares, tips and driver pay per day and company |
+| `GET /zones/busiest?month=2025-03&hour=18&limit=10` | Pickup zones with the most trips |
+| `GET /quality/monthly` | Rows checked and quarantined per month, and the rules that spiked |
+
+```bash
+docker compose up --build api                 # http://localhost:8000/docs for the interactive documentation
+curl "http://localhost:8000/drivers/economics?month=2025-03"
+```
+
+Bad input gets a clear status code: `422` for a badly written month, an hour outside 0 to 23 or a date range
+longer than 92 days, and `404` for a month that is not in the snapshot.
 
 ## Key decisions
 
@@ -93,6 +116,7 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 | [0008](docs/adr/0008-gold-tables.md) | Gold has one table per business question; ratios are computed from totals |
 | [0009](docs/adr/0009-running-on-databricks.md) | The same pipeline steps run locally and as a Databricks Asset Bundle job on serverless |
 | [0010](docs/adr/0010-data-quality-dashboard.md) | A Databricks AI/BI dashboard shows quality rule rates per month and flags spikes |
+| [0011](docs/adr/0011-api-over-a-parquet-snapshot.md) | The API reads a Parquet snapshot of gold with DuckDB instead of querying Databricks |
 
 ## Roadmap
 
@@ -110,14 +134,14 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 
 - [x] Sprint 5: data quality dashboard on Databricks AI/BI, deployed with the bundle, six months loaded
 - [ ] Business dashboard pages on the gold tables
-- [ ] Stage 3: FastAPI service serving gold metrics
+- [x] Sprint 6: FastAPI service over a Parquet snapshot of gold, read with DuckDB, tested in CI
 - [ ] Stage 4: simulated streaming (replay of historical trips through Redpanda) with late-data handling
 - [ ] Benchmarks with documented, repeatable methodology
 
 ## Tech stack
 
 Python 3.12 · PySpark 4.1 · Delta Lake 4.3 · Databricks (Free Edition, serverless) · Databricks Asset Bundles ·
-Docker · uv · pytest · ruff · [pipeline-lint](https://github.com/NafiulSaputra/pipeline-lint) · GitHub Actions
+Databricks AI/BI · FastAPI · DuckDB · Docker · uv · pytest · ruff · [pipeline-lint](https://github.com/NafiulSaputra/pipeline-lint) · GitHub Actions
 
 Python 3.12 matches Databricks serverless environment version 5.
 
@@ -143,10 +167,11 @@ docker compose run --rm spark mobility-lakehouse profile --month 2025-01
 docker compose run --rm spark mobility-lakehouse bronze --month 2025-01    # safe to rerun
 docker compose run --rm spark mobility-lakehouse silver --month 2025-01    # quality rules, safe to rerun
 docker compose run --rm spark mobility-lakehouse gold --month 2025-01      # gold tables, safe to rerun
+docker compose run --rm spark mobility-lakehouse snapshot --month 2025-01  # Parquet for the API, safe to rerun
 docker compose run --rm spark pytest -m spark                              # Spark tests
 ```
 
-On Databricks, the same steps run as a three-task job defined in [`databricks.yml`](databricks.yml).
+On Databricks, the same steps run as a four-task job defined in [`databricks.yml`](databricks.yml).
 The step-by-step guide is in the [Databricks runbook](docs/runbook-databricks.md):
 
 ```bash

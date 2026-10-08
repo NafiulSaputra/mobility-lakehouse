@@ -5,6 +5,7 @@ mobility-lakehouse profile  --month 2025-01      # needs Spark: run it inside Do
 mobility-lakehouse bronze   --month 2025-01      # needs Spark: run it inside Docker
 mobility-lakehouse silver   --month 2025-01      # needs Spark: run it inside Docker
 mobility-lakehouse gold     --month 2025-01      # needs Spark: run it inside Docker
+mobility-lakehouse snapshot --month 2025-01      # needs Spark: Parquet tables for the API (data/snapshot)
 """
 
 from __future__ import annotations
@@ -64,6 +65,12 @@ def build_parser() -> argparse.ArgumentParser:
     gold = commands.add_parser("gold", help="rebuild the gold tables for one silver month (safe to rerun)")
     _add_common(gold)
     _add_lakehouse(gold)
+
+    snapshot = commands.add_parser(
+        "snapshot", help="write one gold month as Parquet for the API, in <data-dir>/snapshot (safe to rerun)"
+    )
+    _add_common(snapshot)
+    _add_lakehouse(snapshot)
     return parser
 
 
@@ -172,6 +179,24 @@ def _run_gold(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_snapshot(args: argparse.Namespace) -> int:
+    from mobility_lakehouse.local_spark import create_local_spark
+    from mobility_lakehouse.pipeline import run_snapshot, snapshot_summary
+
+    layout = _local(args)
+    spark = create_local_spark("mobility-lakehouse-snapshot")
+    try:
+        rows = run_snapshot(spark, layout, args.month)
+    except MissingInputError as error:
+        print(f"Cannot write the snapshot: {error}")
+        return 1
+    finally:
+        spark.stop()
+
+    print("\n".join(snapshot_summary(args.month, rows, layout.snapshot_dir)))
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     commands = {
@@ -180,5 +205,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         "bronze": _run_bronze,
         "silver": _run_silver,
         "gold": _run_gold,
+        "snapshot": _run_snapshot,
     }
     return commands[args.command](args)

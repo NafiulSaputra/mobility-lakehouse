@@ -4,8 +4,10 @@
 #   databricks bundle validate --profile mobility
 #   databricks bundle deploy   --profile mobility
 #   databricks bundle run monthly_pipeline --profile mobility --params month=2025-01
+#   databricks bundle run export_snapshot  --profile mobility --params month=2025-01
 #
-# The raw files must already be in the volume /Volumes/<catalog>/<schema>/raw (see docs/runbook-databricks.md).
+# The raw files must already be in the volume /Volumes/<catalog>/<schema>/raw, and the volume
+# /Volumes/<catalog>/<schema>/serving must exist for the API snapshot (see docs/runbook-databricks.md).
 
 bundle:
   name: mobility-lakehouse
@@ -43,7 +45,7 @@ resources:
   jobs:
     monthly_pipeline:
       name: mobility-lakehouse monthly pipeline
-      description: Load one TLC month into bronze, apply the quality rules (silver) and rebuild gold.
+      description: Load one TLC month into bronze, apply the quality rules (silver), rebuild gold and the API snapshot.
       max_concurrent_runs: 1
 
       parameters:
@@ -85,4 +87,41 @@ resources:
             package_name: mobility_lakehouse
             entry_point: mobility-lakehouse-job
             parameters: ["gold", "--month", "{{job.parameters.month}}",
+                         "--catalog", "${var.catalog}", "--schema", "${var.schema}"]
+
+        # Parquet copy of the month for the API (ADR 0011).
+        - task_key: snapshot
+          depends_on:
+            - task_key: gold
+          environment_key: default
+          python_wheel_task:
+            package_name: mobility_lakehouse
+            entry_point: mobility-lakehouse-job
+            parameters: ["snapshot", "--month", "{{job.parameters.month}}",
+                         "--catalog", "${var.catalog}", "--schema", "${var.schema}"]
+
+    # Only the snapshot step, for months whose gold tables already exist (ADR 0011).
+    export_snapshot:
+      name: mobility-lakehouse export snapshot
+      description: Write one month of gold and quality counts as Parquet for the API.
+      max_concurrent_runs: 1
+
+      parameters:
+        - name: month
+          default: "2025-01"
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "5"
+            dependencies:
+              - ./dist/*.whl
+
+      tasks:
+        - task_key: snapshot
+          environment_key: default
+          python_wheel_task:
+            package_name: mobility_lakehouse
+            entry_point: mobility-lakehouse-job
+            parameters: ["snapshot", "--month", "{{job.parameters.month}}",
                          "--catalog", "${var.catalog}", "--schema", "${var.schema}"]

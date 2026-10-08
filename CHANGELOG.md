@@ -12,6 +12,10 @@ All notable changes to this project are listed here. The format follows
   against the previous month, and quarantined rows per reject rule (ADR 0010).
 - The dashboard is deployed with the Asset Bundle; its SQL datasets are kept in `dashboards/queries` and tested.
 - January to June 2025 loaded on Databricks.
+- Snapshot step: one month of gold and quality counts as Parquet, idempotent per month; fourth task of the
+  monthly job and a separate `export_snapshot` job (ADR 0011).
+- FastAPI service over the snapshot, read with DuckDB: driver economics, daily trips, busiest zones and the
+  quality summary, with input validation, OpenAPI documentation and a Docker image.
 
 ## [0.1.0] - 2026-10-08
 

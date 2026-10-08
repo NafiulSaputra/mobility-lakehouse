@@ -15,11 +15,13 @@ from mobility_lakehouse.pipeline import (
     run_bronze,
     run_gold,
     run_silver,
+    run_snapshot,
     silver_summary,
+    snapshot_summary,
 )
 from mobility_lakehouse.tlc import DATASETS, Month
 
-STEPS = ("bronze", "silver", "gold")
+STEPS = ("bronze", "silver", "gold", "snapshot")
 
 
 def _month(text: str) -> Month:
@@ -36,6 +38,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--catalog", default="workspace", help="Unity Catalog catalog")
     parser.add_argument("--schema", default="mobility", help="Unity Catalog schema")
     parser.add_argument("--volume", default="raw", help="volume in the schema that holds the raw files")
+    parser.add_argument(
+        "--serving-volume", default="serving", help="volume in the schema that holds the API snapshot"
+    )
     parser.add_argument("--dataset", default="fhvhv", choices=sorted(DATASETS))
     return parser
 
@@ -44,7 +49,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     from pyspark.sql import SparkSession
 
     args = build_parser().parse_args(argv)
-    layout = catalog_layout(args.catalog, args.schema, args.dataset, args.volume)
+    layout = catalog_layout(args.catalog, args.schema, args.dataset, args.volume, args.serving_volume)
     spark = SparkSession.builder.getOrCreate()
 
     if args.step == "bronze":
@@ -54,5 +59,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(f"Bronze {args.month}: {rows:,} rows in {layout.bronze}")
     elif args.step == "silver":
         print("\n".join(silver_summary(args.month, run_silver(spark, layout, args.month))))
-    else:
+    elif args.step == "gold":
         print("\n".join(gold_summary(args.month, run_gold(spark, layout, args.month))))
+    else:
+        rows = run_snapshot(spark, layout, args.month)
+        print("\n".join(snapshot_summary(args.month, rows, layout.snapshot_dir)))
