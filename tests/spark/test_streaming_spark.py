@@ -15,11 +15,14 @@ import pytest
 pytest.importorskip("pyspark")
 pytest.importorskip("delta")
 
+from mobility_lakehouse.reconcile import dropped_in_runs, stream_hourly  # noqa: E402
 from mobility_lakehouse.streaming import (  # noqa: E402
     EVENT_SCHEMA,
     StreamingPaths,
+    StreamSummary,
     dropped_by_watermark,
     parse_events,
+    record_run,
     start_pickup_stream,
 )
 
@@ -73,6 +76,7 @@ def setup(tmp_path: Path) -> tuple[Path, StreamingPaths]:
         events_dir=str(tmp_path / "unused"),
         table=str(tmp_path / "pickups_15min"),
         checkpoint=str(tmp_path / "checkpoint"),
+        runs=str(tmp_path / "runs"),
     )
     return tmp_path / "events", paths
 
@@ -123,3 +127,21 @@ def test_kafka_values_are_parsed_and_broken_messages_skipped(spark: SparkSession
 
     assert len(rows) == 1
     assert (rows[0]["event_id"], rows[0]["pickup_zone_id"]) == ("a", 132)
+
+
+def test_runs_are_recorded_once_and_windows_add_up_per_hour(
+    spark: SparkSession, setup: tuple[Path, StreamingPaths]
+) -> None:
+    from datetime import date, datetime
+
+    source, paths = setup
+    write_events(source, "001", [(1, "08:00"), (1, "08:20"), (1, "08:50"), (2, "09:05")])
+    run_until_caught_up(spark, source, paths)
+
+    started, finished = datetime(2026, 10, 8, 16, 0), datetime(2026, 10, 8, 16, 5)
+    record_run(spark, paths.runs, "run-1", started, finished, StreamSummary(2, 4, 0, 4, 4))
+    record_run(spark, paths.runs, "run-1", started, finished, StreamSummary(2, 4, 3, 4, 4))  # same run again
+    record_run(spark, paths.runs, "run-2", started, finished, StreamSummary(1, 0, 2, 4, 4))
+
+    assert dropped_in_runs(spark, paths.runs) == (5, 2)  # run-1 replaced, not added twice
+    assert stream_hourly(spark, paths.table, date(2025, 1, 15)) == {(8, 1): 3, (9, 2): 1}

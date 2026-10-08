@@ -113,6 +113,8 @@ with a 30-minute watermark and merges the results into Delta
 - An event up to 30 minutes late is still counted in its window; an older one is dropped, and the number of
   dropped events is reported, so every missing trip is explained.
 - The replay uses a fixed seed, so the same command always produces the same stream.
+- The stream is reconciled with batch gold for the replayed day: the trips missing from the stream are
+  exactly the late events Spark dropped, and no zone-hour has more trips than batch ([report](docs/reports/streaming_reconciliation_2025-01-15.md)).
 - A Spark test checks the watermark: a late event inside it updates its window, an older one is dropped and
   counted, and a run without new events changes nothing.
 
@@ -155,7 +157,7 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 - [ ] Business dashboard pages on the gold tables
 - [x] Sprint 6: FastAPI service over a Parquet snapshot of gold, read with DuckDB, tested in CI
 - [x] Sprint 7: streaming replay through Redpanda with late events, Spark Structured Streaming with a 30-minute watermark
-- [ ] Sprint 8: reconcile the stream with batch gold, live replay demo
+- [x] Sprint 8: stream reconciled with batch gold, run log and reset command ([report](docs/reports/streaming_reconciliation_2025-01-15.md))
 - [ ] Benchmarks with documented, repeatable methodology
 
 ## Tech stack

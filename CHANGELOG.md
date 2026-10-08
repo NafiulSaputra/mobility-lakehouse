@@ -19,6 +19,9 @@ All notable changes to this project are listed here. The format follows
 - Streaming replay (ADR 0012): one day of silver trips sent to Redpanda faster than real time, with a seeded
   share of late and out-of-order events; Spark Structured Streaming counts trips per pickup zone and
   15-minute window with a 30-minute watermark, merges results into Delta and reports late rows dropped.
+- Stream run log and `reconcile`: trips per zone and hour in the stream are compared with batch gold for the
+  replayed day; the trips missing from the stream must equal the late rows Spark dropped. Report in
+  `docs/reports`. `stream-reset` deletes the topic, results and checkpoint.
 
 ## [0.1.0] - 2026-10-08
 

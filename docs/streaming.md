@@ -42,7 +42,18 @@ docker compose ps
    ```
 
    The summary shows how many events were read and how many were dropped because they were more than 30
-   minutes late. Results are in `data/lakehouse/streaming/fhvhv_pickups_15min`.
+   minutes late. Results are in `data/lakehouse/streaming/fhvhv_pickups_15min`, and every run is recorded in
+   `data/lakehouse/streaming/fhvhv_stream_runs`.
+
+4. Check the stream against batch. The day must be in the local gold tables (`mobility-lakehouse gold`):
+
+   ```
+   docker compose run --rm spark mobility-lakehouse reconcile --date 2025-01-15
+   ```
+
+   The command compares trips per pickup zone and hour with gold `hourly_pickup_zones` and writes a report
+   to `docs/reports/streaming_reconciliation_2025-01-15.md`. It ends with `RECONCILED` when the trips missing
+   from the stream are exactly the late events Spark dropped.
 
 To watch it live instead, start `stream` without `--until-caught-up` in one window and `replay` in another.
 Stop the stream with Ctrl+C.
@@ -50,9 +61,8 @@ Stop the stream with Ctrl+C.
 ## Start again from zero
 
 Replaying the same day twice adds the events to the topic twice. To start again, delete the topic, the
-results and the checkpoint:
+results, the run log and the checkpoint:
 
 ```
-docker compose exec redpanda rpk topic delete trips
-rmdir /s /q data\lakehouse\streaming data\lakehouse\_checkpoints
+docker compose run --rm spark mobility-lakehouse stream-reset
 ```

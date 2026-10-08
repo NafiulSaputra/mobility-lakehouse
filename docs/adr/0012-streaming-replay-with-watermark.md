@@ -32,8 +32,9 @@ The stream must be repeatable, so that its result can be checked against somethi
 - **Two ways to run:** `--until-caught-up` processes what is in the topic and stops (repeatable, used for
   checks); without it, the stream runs live while the replay is sending.
 - **Correctness is proven against batch.** For the replayed day, trips per zone and hour in the stream must
-  equal the batch gold table `hourly_pickup_zones`, minus the events the stream dropped as too late
-  (Sprint 8).
+  equal the batch gold table `hourly_pickup_zones`, minus the events the stream dropped as too late.
+  `mobility-lakehouse reconcile` checks this and writes a report to `docs/reports`. Every stream run is
+  recorded with the late rows Spark dropped, so the check uses Spark's own numbers.
 
 ## Consequences
 

@@ -158,3 +158,14 @@ class KafkaSender:
         remaining = self._producer.flush(30)
         if remaining:
             raise RuntimeError(f"{remaining} events were not delivered to {self.topic}")
+
+
+def delete_topic(bootstrap_servers: str, topic: str = DEFAULT_TOPIC) -> str:
+    """Delete a topic so that the next replay starts from an empty stream. Returns what happened."""
+    from confluent_kafka.admin import AdminClient
+
+    admin = AdminClient({"bootstrap.servers": bootstrap_servers})
+    if topic not in admin.list_topics(timeout=10).topics:
+        return f"Topic {topic} does not exist"
+    admin.delete_topics([topic], operation_timeout=30)[topic].result()
+    return f"Deleted topic {topic}"
