@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from mobility_lakehouse.delta_io import PARTITION_COLUMN, replace_month
+from mobility_lakehouse.delta_io import PARTITION_COLUMN, Table, write_month
 from mobility_lakehouse.tlc import Month
 
 if TYPE_CHECKING:
@@ -137,15 +137,15 @@ def monthly_driver_economics(silver: DataFrame) -> DataFrame:
 
 @dataclass(frozen=True)
 class GoldTargets:
-    """Storage paths of the gold tables."""
+    """The gold tables."""
 
-    daily_company_trips: str
-    hourly_pickup_zones: str
-    monthly_driver_economics: str
+    daily_company_trips: Table
+    hourly_pickup_zones: Table
+    monthly_driver_economics: Table
 
 
 def build_gold(silver_month: DataFrame, month: Month, targets: GoldTargets) -> None:
     """Rebuild every gold table for one month from that month's silver rows."""
-    replace_month(daily_company_trips(silver_month), month, path=targets.daily_company_trips)
-    replace_month(hourly_pickup_zones(silver_month), month, path=targets.hourly_pickup_zones)
-    replace_month(monthly_driver_economics(silver_month), month, path=targets.monthly_driver_economics)
+    write_month(daily_company_trips(silver_month), month, targets.daily_company_trips)
+    write_month(hourly_pickup_zones(silver_month), month, targets.hourly_pickup_zones)
+    write_month(monthly_driver_economics(silver_month), month, targets.monthly_driver_economics)

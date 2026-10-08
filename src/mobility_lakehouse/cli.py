@@ -13,6 +13,7 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
+from mobility_lakehouse.pipeline import Layout, MissingInputError, local_layout
 from mobility_lakehouse.tlc import (
     DATASETS,
     Month,
@@ -75,14 +76,6 @@ def _add_lakehouse(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def table_path(lakehouse_dir: Path, layer: str, name: str) -> Path:
-    return lakehouse_dir / layer / name
-
-
-def bronze_table_path(lakehouse_dir: Path, dataset: str) -> Path:
-    return table_path(lakehouse_dir, "bronze", f"{dataset}_trips")
-
-
 def _run_download(args: argparse.Namespace) -> int:
     for result in (
         download_month(args.dataset, args.month, args.data_dir),
@@ -115,123 +108,67 @@ def _run_profile(args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_bronze(args: argparse.Namespace) -> int:
-    from pyspark.sql import functions as F
+def _local(args: argparse.Namespace) -> Layout:
+    return local_layout(args.data_dir, args.lakehouse_dir, args.dataset)
 
-    from mobility_lakehouse.bronze import prepare_bronze, write_bronze
+
+def _run_bronze(args: argparse.Namespace) -> int:
     from mobility_lakehouse.local_spark import create_local_spark
+    from mobility_lakehouse.pipeline import run_bronze
 
     source = local_path(args.data_dir, args.dataset, args.month)
     if not source.exists():
         print(f"File not found: {source}\nRun first: mobility-lakehouse download --month {args.month}")
         return 1
 
-    target = bronze_table_path(args.lakehouse_dir, args.dataset)
+    layout = _local(args)
     spark = create_local_spark("mobility-lakehouse-bronze")
     try:
-        raw = spark.read.parquet(str(source))
-        bronze = prepare_bronze(raw, args.month, source_file=source.name)
-        write_bronze(bronze, args.month, path=str(target))
-        table = spark.read.format("delta").load(str(target))
-        month_rows = table.where(F.col("data_month") == F.lit(args.month.start)).count()
-        months = table.select("data_month").distinct().count()
+        month_rows = run_bronze(spark, layout, args.month)
+        months = layout.bronze.read(spark).select("data_month").distinct().count()
     finally:
         spark.stop()
 
-    print(f"Bronze {args.month}: {month_rows:,} rows in {target} ({months} month(s) in the table)")
+    print(f"Bronze {args.month}: {month_rows:,} rows in {layout.bronze} ({months} month(s) in the table)")
     return 0
 
 
 def _run_silver(args: argparse.Namespace) -> int:
-    from pyspark.sql import functions as F
-
     from mobility_lakehouse.local_spark import create_local_spark
-    from mobility_lakehouse.silver import SilverTargets, build_silver
+    from mobility_lakehouse.pipeline import run_silver, silver_summary
 
     zones_file = zone_lookup_path(args.data_dir)
     if not zones_file.exists():
         print(f"File not found: {zones_file}\nRun first: mobility-lakehouse download --month {args.month}")
         return 1
 
-    bronze_path = bronze_table_path(args.lakehouse_dir, args.dataset)
-    name = f"{args.dataset}_trips"
-    targets = SilverTargets(
-        silver=str(table_path(args.lakehouse_dir, "silver", name)),
-        quarantine=str(table_path(args.lakehouse_dir, "quarantine", name)),
-        rule_counts=str(table_path(args.lakehouse_dir, "quality", f"{args.dataset}_rule_counts")),
-    )
-
     spark = create_local_spark("mobility-lakehouse-silver")
     try:
-        bronze = spark.read.format("delta").load(str(bronze_path))
-        bronze_month = bronze.where(F.col("data_month") == F.lit(args.month.start))
-        # Never replace a month with nothing: an empty input would erase that month downstream.
-        if bronze_month.isEmpty():
-            print(f"No bronze rows for {args.month}.")
-            print(f"Run first: mobility-lakehouse bronze --month {args.month}")
-            return 1
-        zones = spark.read.option("header", True).csv(str(zones_file))
-        result = build_silver(bronze_month, zones, args.month, targets)
+        result = run_silver(spark, _local(args), args.month)
+    except MissingInputError as error:
+        print(f"Cannot build silver: {error}")
+        return 1
     finally:
         spark.stop()
 
-    def share(n: int) -> str:
-        return f"{100 * n / result.total_rows:.4f}%"
-
-    print(f"Silver {args.month}: {result.total_rows:,} bronze rows")
-    print(f"  silver:     {result.silver_rows:,} ({share(result.silver_rows)})")
-    print(f"  quarantine: {result.quarantined_rows:,} ({share(result.quarantined_rows)})")
-    for count in result.rule_counts:
-        label = f"{count.rule_id} {count.description}"
-        print(f"  {label:<40} {count.matched_rows:>12,} ({share(count.matched_rows)}) [{count.severity}]")
+    print("\n".join(silver_summary(args.month, result)))
     return 0
 
 
 def _run_gold(args: argparse.Namespace) -> int:
-    from pyspark.sql import functions as F
-
-    from mobility_lakehouse.gold import GoldTargets, build_gold
     from mobility_lakehouse.local_spark import create_local_spark
-
-    def gold_path(name: str) -> str:
-        return str(table_path(args.lakehouse_dir, "gold", f"{args.dataset}_{name}"))
-
-    silver_path = table_path(args.lakehouse_dir, "silver", f"{args.dataset}_trips")
-    targets = GoldTargets(
-        daily_company_trips=gold_path("daily_company_trips"),
-        hourly_pickup_zones=gold_path("hourly_pickup_zones"),
-        monthly_driver_economics=gold_path("monthly_driver_economics"),
-    )
+    from mobility_lakehouse.pipeline import gold_summary, run_gold
 
     spark = create_local_spark("mobility-lakehouse-gold")
     try:
-        silver = spark.read.format("delta").load(str(silver_path))
-        silver_month = silver.where(F.col("data_month") == F.lit(args.month.start))
-        # Never replace a month with nothing: an empty input would erase that month in gold.
-        if silver_month.isEmpty():
-            print(f"No silver rows for {args.month}.")
-            print(f"Run first: mobility-lakehouse silver --month {args.month}")
-            return 1
-        build_gold(silver_month, args.month, targets)
-
-        print(f"Gold {args.month}:")
-        for name, path in vars(targets).items():
-            table = spark.read.format("delta").load(path)
-            rows = table.where(F.col("data_month") == F.lit(args.month.start)).count()
-            print(f"  {name:<26} {rows:>9,} rows")
-        economics = spark.read.format("delta").load(targets.monthly_driver_economics)
-        month_economics = economics.where(F.col("data_month") == F.lit(args.month.start))
-        top = month_economics.orderBy(F.col("trips").desc()).limit(10).collect()
+        summary = run_gold(spark, _local(args), args.month)
+    except MissingInputError as error:
+        print(f"Cannot build gold: {error}")
+        return 1
     finally:
         spark.stop()
 
-    print("  Driver economics:")
-    for row in top:
-        print(
-            f"    {row['company']:<14} {row['trips']:>11,} trips  "
-            f"${row['driver_pay_per_mile']}/mile  ${row['driver_pay_per_minute']}/minute  "
-            f"driver share of base fare {row['driver_share_of_base_fare']}"
-        )
+    print("\n".join(gold_summary(args.month, summary)))
     return 0
 
 

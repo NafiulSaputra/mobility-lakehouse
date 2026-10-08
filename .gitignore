@@ -224,3 +224,6 @@ data/
 spark-warehouse/
 metastore_db/
 derby.log
+
+# Databricks bundle working files
+.databricks/

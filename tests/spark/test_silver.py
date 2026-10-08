@@ -11,9 +11,9 @@ import pytest
 pytest.importorskip("pyspark")
 pytest.importorskip("delta")
 
-from factories import bronze_frame, read_delta, trip_row, zones_frame  # noqa: E402
+from factories import bronze_frame, trip_row, zones_frame  # noqa: E402
 
-from mobility_lakehouse.delta_io import month_predicate  # noqa: E402
+from mobility_lakehouse.delta_io import Table, month_predicate  # noqa: E402
 from mobility_lakehouse.silver import (  # noqa: E402
     SilverTargets,
     build_silver,
@@ -45,9 +45,9 @@ def first_row(df: DataFrame) -> Any:
 
 def targets(base: Path) -> SilverTargets:
     return SilverTargets(
-        silver=str(base / "silver"),
-        quarantine=str(base / "quarantine"),
-        rule_counts=str(base / "rule_counts"),
+        silver=Table(path=str(base / "silver")),
+        quarantine=Table(path=str(base / "quarantine")),
+        rule_counts=Table(path=str(base / "rule_counts")),
     )
 
 
@@ -165,9 +165,9 @@ def test_build_silver_writes_three_tables_and_counts_rules(spark: SparkSession, 
     assert counts["Q004"] == 1
     assert counts["W002"] == 1
     assert sum(counts.values()) == 2
-    assert read_delta(spark, Path(t.silver)).count() == 9
-    assert read_delta(spark, Path(t.quarantine)).count() == 1
-    assert read_delta(spark, Path(t.rule_counts)).count() == 12
+    assert t.silver.read(spark).count() == 9
+    assert t.quarantine.read(spark).count() == 1
+    assert t.rule_counts.read(spark).count() == 12
 
 
 def test_rerunning_a_month_gives_the_same_tables(spark: SparkSession, tmp_path: Path) -> None:
@@ -175,14 +175,14 @@ def test_rerunning_a_month_gives_the_same_tables(spark: SparkSession, tmp_path: 
     t = targets(tmp_path)
 
     build_silver(bronze_frame(spark, JAN, rows), zones_frame(spark), JAN, t)
-    first = {name: read_delta(spark, Path(path)).cache() for name, path in vars(t).items()}
+    first = {name: table.read(spark).cache() for name, table in vars(t).items()}
     for frame in first.values():
         frame.count()
 
     build_silver(bronze_frame(spark, JAN, rows), zones_frame(spark), JAN, t)
 
-    for name, path in vars(t).items():
-        second = read_delta(spark, Path(path))
+    for name, table in vars(t).items():
+        second = table.read(spark)
         assert first[name].exceptAll(second).isEmpty(), name
         assert second.exceptAll(first[name]).isEmpty(), name
 
@@ -194,6 +194,6 @@ def test_rerunning_one_month_does_not_touch_another(spark: SparkSession, tmp_pat
 
     build_silver(bronze_frame(spark, JAN, [trip_row(JAN, n) for n in range(2)]), zones_frame(spark), JAN, t)
 
-    silver = read_delta(spark, Path(t.silver))
+    silver = t.silver.read(spark)
     assert silver.where(month_predicate(JAN)).count() == 2
     assert silver.where(month_predicate(FEB)).count() == 3

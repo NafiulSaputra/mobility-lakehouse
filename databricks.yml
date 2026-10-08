@@ -1,0 +1,80 @@
+# Databricks Asset Bundle: builds the project wheel and defines the monthly pipeline job (ADR 0009).
+#
+#   databricks bundle validate --profile mobility
+#   databricks bundle deploy   --profile mobility
+#   databricks bundle run monthly_pipeline --profile mobility --params month=2025-01
+#
+# The raw files must already be in the volume /Volumes/<catalog>/<schema>/raw (see docs/runbook-databricks.md).
+
+bundle:
+  name: mobility-lakehouse
+
+variables:
+  catalog:
+    description: Unity Catalog catalog that holds the schema
+    default: workspace
+  schema:
+    description: Unity Catalog schema for the tables and the raw volume
+    default: mobility
+
+artifacts:
+  default:
+    type: whl
+    build: uv build --wheel
+    path: .
+    # Serverless caches environments per wheel version. A new version on every deploy makes sure the job
+    # runs the code that was just deployed.
+    dynamic_version: true
+
+targets:
+  dev:
+    default: true
+    mode: development
+
+resources:
+  jobs:
+    monthly_pipeline:
+      name: mobility-lakehouse monthly pipeline
+      description: Load one TLC month into bronze, apply the quality rules (silver) and rebuild gold.
+      max_concurrent_runs: 1
+
+      parameters:
+        - name: month
+          default: "2025-01"
+
+      environments:
+        - environment_key: default
+          spec:
+            # Serverless environment version 5: Python 3.12 (ADR 0005).
+            environment_version: "5"
+            dependencies:
+              - ./dist/*.whl
+
+      tasks:
+        - task_key: bronze
+          environment_key: default
+          python_wheel_task:
+            package_name: mobility_lakehouse
+            entry_point: mobility-lakehouse-job
+            parameters: ["bronze", "--month", "{{job.parameters.month}}",
+                         "--catalog", "${var.catalog}", "--schema", "${var.schema}"]
+
+        - task_key: silver
+          depends_on:
+            - task_key: bronze
+          environment_key: default
+          python_wheel_task:
+            package_name: mobility_lakehouse
+            entry_point: mobility-lakehouse-job
+            parameters: ["silver", "--month", "{{job.parameters.month}}",
+                         "--catalog", "${var.catalog}", "--schema", "${var.schema}"]
+
+        - task_key: gold
+          depends_on:
+            - task_key: silver
+          environment_key: default
+          python_wheel_task:
+            package_name: mobility_lakehouse
+            entry_point: mobility-lakehouse-job
+            parameters: ["gold", "--month", "{{job.parameters.month}}",
+                         "--catalog", "${var.catalog}", "--schema", "${var.schema}"]

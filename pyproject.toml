@@ -11,6 +11,7 @@ dependencies = []
 
 [project.scripts]
 mobility-lakehouse = "mobility_lakehouse.cli:main"
+mobility-lakehouse-job = "mobility_lakehouse.databricks_job:main"
 
 [build-system]
 requires = ["uv_build>=0.12.22,<0.13.0"]

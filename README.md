@@ -6,9 +6,9 @@ End-to-end Databricks lakehouse for NYC ride-hailing trip data (NYC TLC High Vol
 Incremental, idempotent bronze/silver/gold pipelines with Delta Lake, explicit data quality checks with quarantine,
 CI/CD, and architecture decision records.
 
-> **Status: work in progress (Sprint 0).** The architecture and decisions are documented. Pipeline code is not
-> written yet. The [roadmap](#roadmap) shows what is done and what is planned. Nothing in this README describes a
-> feature as working until it is.
+> **Status: v0.1.0, batch lakehouse complete.** Bronze, silver and gold run locally in Docker and as a
+> Databricks job, with the same results on both. The dashboard, API and streaming stages are planned for v1.0
+> (see the [roadmap](#roadmap)). Changes per release are in the [changelog](CHANGELOG.md).
 
 ## The problem
 
@@ -48,6 +48,20 @@ flowchart LR
 
 Column-level details: [docs/data-model.md](docs/data-model.md).
 
+## Results
+
+January 2025 (20.4 million trips), run locally in Docker and on Databricks Free Edition serverless:
+
+| Measure | Local (Docker) | Databricks |
+|---|---|---|
+| Bronze rows | 20,405,666 | 20,405,666 |
+| Silver rows | 20,402,922 | 20,402,922 |
+| Quarantined rows (negative fare, negative driver pay, drop-off before pickup) | 2,744 | 2,744 |
+| Uber / Lyft trips in gold | 15,353,745 / 5,049,177 | 15,353,745 / 5,049,177 |
+
+The Databricks job (bronze, silver, gold) took 3 minutes 17 seconds, including compute start-up. Running the
+same month a second time left every table count unchanged. Details: [ADR 0009](docs/adr/0009-running-on-databricks.md).
+
 ## Key decisions
 
 Every significant decision is recorded as an Architecture Decision Record in [`docs/adr`](docs/adr/).
@@ -62,6 +76,7 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 | [0006](docs/adr/0006-data-quality-rules-and-silver-schema.md) | Quality rules (7 reject, 5 warning) and silver schema, based on profiling two months |
 | [0007](docs/adr/0007-explicit-bronze-schema-contract.md) | Bronze follows an explicit schema contract; unknown source columns stop the load |
 | [0008](docs/adr/0008-gold-tables.md) | Gold has one table per business question; ratios are computed from totals |
+| [0009](docs/adr/0009-running-on-databricks.md) | The same pipeline steps run locally and as a Databricks Asset Bundle job on serverless |
 
 ## Roadmap
 
@@ -73,7 +88,7 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 - [x] Sprint 2: bronze ingestion with idempotency tests, run in CI on every pull request
 - [x] Sprint 3: silver quality rules, quarantine table and per-rule quality counts ([data model](docs/data-model.md))
 - [x] Sprint 4a: gold tables (daily trips per company, hourly busy zones, monthly driver economics)
-- [ ] Sprint 4b: run the pipeline on Databricks with Asset Bundles, release v0.1.0
+- [x] Sprint 4b: run the pipeline on Databricks with Asset Bundles ([runbook](docs/runbook-databricks.md)), release v0.1.0
 
 ### Later stages (target: v1.0)
 
@@ -114,10 +129,19 @@ docker compose run --rm spark mobility-lakehouse gold --month 2025-01      # gol
 docker compose run --rm spark pytest -m spark                              # Spark tests
 ```
 
+On Databricks, the same steps run as a three-task job defined in [`databricks.yml`](databricks.yml).
+The step-by-step guide is in the [Databricks runbook](docs/runbook-databricks.md):
+
+```bash
+databricks bundle deploy --profile mobility
+databricks bundle run monthly_pipeline --profile mobility --params month=2025-01
+```
+
 Profiling reports are written to [`docs/profiling`](docs/profiling/).
 
 CI runs two jobs on every pull request and on `main`: lint, format, pipeline-lint and unit tests, and the Spark
-tests that prove bronze and silver are idempotent and every quality rule works.
+tests that prove every layer is idempotent, every quality rule works and the full pipeline runs from raw
+files to gold.
 
 ## Data source and license
 
