@@ -24,6 +24,8 @@ target-version = "py312"
 [tool.ruff.lint]
 # E/W pycodestyle, F pyflakes, I import order, B bugbear, UP pyupgrade, SIM simplify
 select = ["E", "W", "F", "I", "B", "UP", "SIM"]
+# pipeline-lint's rule codes, so "# noqa: DE002" comments are accepted by ruff.
+external = ["DE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
