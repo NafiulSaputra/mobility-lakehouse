@@ -23,8 +23,10 @@ from mobility_lakehouse.pipeline import (  # noqa: E402
     local_layout,
     run_bronze,
     run_gold,
+    run_powerbi_export,
     run_silver,
     run_snapshot,
+    run_star,
 )
 from mobility_lakehouse.tlc import Month  # noqa: E402
 
@@ -115,3 +117,71 @@ def test_local_benchmark_runs_every_step_on_each_repeat(spark: SparkSession, tmp
     # Reruns replace the month: the second repeat ends with the same rows as the first.
     assert result.rows["bronze"] == 7
     assert result.rows["silver"] == 6
+
+
+@pytest.mark.parametrize("persist", [True, False], ids=["local", "databricks-serverless"])
+def test_silver_to_star_passes_every_check_and_is_safe_to_rerun(
+    spark: SparkSession, tmp_path: Path, persist: bool
+) -> None:
+    layout = prepare_inputs(spark, tmp_path, persist)
+    run_bronze(spark, layout, JAN)
+    run_silver(spark, layout, JAN)
+
+    first = run_star(spark, layout, JAN)
+    second = run_star(spark, layout, JAN)
+
+    assert first.passed, [c for c in first.checks if not c.passed]
+    assert first.rows_per_table["fct_trips"] == 6  # the quarantined trip is not a fact
+    assert first.rows_per_table["dim_zone"] == 264
+    assert first.rows_per_table["dim_time"] == 24
+    assert second.rows_per_table == first.rows_per_table
+
+
+def test_star_refuses_to_run_before_silver(spark: SparkSession, tmp_path: Path) -> None:
+    layout = prepare_inputs(spark, tmp_path, persist=True)
+    run_bronze(spark, layout, JAN)
+    run_silver(spark, layout, JAN)
+
+    with pytest.raises(MissingInputError, match="no silver rows for 2025-02"):
+        run_star(spark, layout, FEB)
+
+
+def test_powerbi_export_writes_one_file_per_table_and_is_safe_to_rerun(
+    spark: SparkSession, tmp_path: Path
+) -> None:
+    from mobility_lakehouse.powerbi import POWERBI_TABLES
+
+    layout = prepare_inputs(spark, tmp_path, persist=True)
+    run_bronze(spark, layout, JAN)
+    run_silver(spark, layout, JAN)
+    run_star(spark, layout, JAN)
+
+    first = run_powerbi_export(spark, layout, JAN)
+    second = run_powerbi_export(spark, layout, JAN)
+
+    out = Path(layout.powerbi_dir)
+    # Exactly one file per table, and no staging folders left behind.
+    assert sorted(p.name for p in out.iterdir()) == sorted(f"{name}.parquet" for name in POWERBI_TABLES)
+    rows = {file.name: file.rows for file in first}
+    assert rows == {
+        "dim_date": 365,  # only the year 2025, the year that has data
+        "dim_time": 24,
+        "dim_zone": 264,
+        "dim_company": 4,
+        "fct_trips_hourly": rows["fct_trips_hourly"],
+        "fct_trips": 6,
+    }
+    assert rows["fct_trips_hourly"] > 0
+    assert all(file.size_bytes > 0 for file in first)
+    assert [(f.name, f.rows) for f in second] == [(f.name, f.rows) for f in first]
+    assert "trip_key" not in spark.read.parquet(str(out / "fct_trips.parquet")).columns
+
+
+def test_powerbi_export_refuses_to_run_before_star(spark: SparkSession, tmp_path: Path) -> None:
+    layout = prepare_inputs(spark, tmp_path, persist=True)
+    run_bronze(spark, layout, JAN)
+    run_silver(spark, layout, JAN)
+    run_star(spark, layout, JAN)
+
+    with pytest.raises(MissingInputError, match="no fct_trips rows for 2025-02"):
+        run_powerbi_export(spark, layout, FEB)

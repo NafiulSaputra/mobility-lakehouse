@@ -4,6 +4,34 @@ All notable changes to this project are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-10-15
+
+A dimensional model on top of silver, checked on every run and exported for Power BI.
+
+### Added
+
+- Star schema in gold (ADR 0014): `fct_trips` (one row per trip that passed every reject rule),
+  `fct_trips_hourly` (pickup date x hour x zone x company), and the dimensions `dim_date`, `dim_time`,
+  `dim_zone` (used for pickup and dropoff) and `dim_company`.
+- Keys computed from values, so a rerun gives the same keys: `trip_key` is a hash of every source column plus a
+  sequence number for identical rows.
+- `star` step: builds the star schema for one month, then checks it (silver trips = fact rows, unique trip keys,
+  hourly totals = trip facts, no orphan keys) and fails when a check fails. Runs in the monthly Databricks job
+  next to gold, and as a separate `build_star` job.
+- `powerbi-export` command and `export_powerbi` job: one Parquet file per table, with trip grain for one month
+  and hourly grain for every month.
+- Shared write helpers for whole-table rebuilds and `MERGE`, next to the monthly overwrite.
+
+### Fixed
+
+- Spark SQL statements on local Delta tables use absolute paths. A relative path such as
+  ``delta.`data/...` `` was read as a table in a schema named `delta`.
+
+### Validated
+
+- January to June 2025 on Databricks: 120,989,963 trips in `fct_trips`, every check passed for every month.
+- January 2025 gives 20,402,922 trips in `fct_trips` locally and on Databricks.
+
 ## [1.0.0] - 2026-10-08
 
 The full lakehouse: batch on Databricks, a data quality dashboard, an API, a reconciled stream and
@@ -49,5 +77,6 @@ First release: a batch lakehouse for NYC TLC High Volume For-Hire Vehicle trips,
 
 - January 2025 gives identical counts locally and on Databricks Free Edition, and a rerun changes nothing.
 
+[1.1.0]: https://github.com/NafiulSaputra/mobility-lakehouse/releases/tag/v1.1.0
 [1.0.0]: https://github.com/NafiulSaputra/mobility-lakehouse/releases/tag/v1.0.0
 [0.1.0]: https://github.com/NafiulSaputra/mobility-lakehouse/releases/tag/v0.1.0

@@ -106,6 +106,21 @@ docker compose up --build api
 
 The API is on http://localhost:8000 and its documentation on http://localhost:8000/docs.
 
+## Star schema and Power BI export
+
+The monthly job builds the star schema next to gold (ADR 0014). For months whose silver tables already exist,
+build it on its own, then export the files for Power BI and download them:
+
+```
+databricks bundle run build_star --profile mobility --params month=2025-01
+databricks bundle run export_powerbi --profile mobility --params month=2025-06
+databricks fs cp -r dbfs:/Volumes/workspace/mobility/serving/powerbi data/powerbi --overwrite --profile mobility
+```
+
+`build_star` prints the rows per table and eight checks, and fails when a check fails. `export_powerbi` writes
+`fct_trips` for the given month and `fct_trips_hourly` for every month, one Parquet file per table, to the
+`serving` volume.
+
 ## Data quality dashboard
 
 The dashboard (ADR 0010) is deployed with the bundle, next to the job:
@@ -130,6 +145,7 @@ databricks bundle generate dashboard --resource quality_dashboard --force --prof
 | Quarantine | `workspace.mobility.quarantine_fhvhv_trips` |
 | Rule counts | `workspace.mobility.quality_fhvhv_rule_counts` |
 | Gold | `workspace.mobility.gold_fhvhv_daily_company_trips`, `..._hourly_pickup_zones`, `..._monthly_driver_economics` |
+| Star schema | `workspace.mobility.gold_fhvhv_fct_trips`, `..._fct_trips_hourly`, `..._dim_date`, `..._dim_time`, `..._dim_zone`, `..._dim_company` |
 
 ## When something goes wrong
 
@@ -143,4 +159,7 @@ databricks bundle generate dashboard --resource quality_dashboard --force --prof
 | `bundle validate` cannot find the warehouse | The SQL warehouse has another name | Pass `--var warehouse_id=<id>`, or change the lookup in `databricks.yml` |
 | `snapshot` fails with a volume not found error | The `serving` volume does not exist | Run step 4 of the one-time setup |
 | The API does not start: `no Parquet files in ...` | The snapshot was not downloaded, or only partly | Download the snapshot again (see API snapshot) |
+| `star` fails with "outside the calendar dimension" | The month is after 2027-12-31 | Extend `CALENDAR_END` in `dimensions.py`, then deploy again |
+| `star` reports "Some checks FAILED" | The tables do not match the checks of ADR 0014 | Read the failed check in the task output; rerun `build_star` for the month after the fix |
+| `export_powerbi` fails with "no fct_trips rows" | `star` did not run for that month | Run `build_star` for the month first |
 | `bundle deploy` fails on `uv build` | uv is not on the PATH of this terminal | Open a new Command Prompt and check `uv --version` |

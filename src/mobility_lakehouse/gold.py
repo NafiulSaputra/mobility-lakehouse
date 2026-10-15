@@ -50,7 +50,11 @@ def company_name(code: str | None) -> str:
     return COMPANIES.get(code, f"Other ({code})")
 
 
-def _company() -> Column:
+def company_column() -> Column:
+    """Company name from ``hvfhs_license_num``, the Spark version of ``company_name``.
+
+    Shared by the gold tables and the company dimension (ADR 0014), so both name a company the same way.
+    """
     from pyspark.sql import functions as F
 
     code = F.col("hvfhs_license_num")
@@ -79,7 +83,7 @@ def daily_company_trips(silver: DataFrame) -> DataFrame:
 
     passenger_total = sum(F.coalesce(F.col(c), F.lit(0.0)) for c in PASSENGER_CHARGES)
     return (
-        silver.withColumn("company", _company())
+        silver.withColumn("company", company_column())
         .withColumn("trip_date", F.to_date("pickup_datetime"))
         .withColumn("_passenger_total", passenger_total)
         .groupBy(PARTITION_COLUMN, "trip_date", "company", "hvfhs_license_num")
@@ -121,7 +125,7 @@ def monthly_driver_economics(silver: DataFrame) -> DataFrame:
     minutes = F.sum("trip_time") / 60
     fare = F.sum("base_passenger_fare")
     return (
-        silver.withColumn("company", _company())
+        silver.withColumn("company", company_column())
         .groupBy(PARTITION_COLUMN, "company", "hvfhs_license_num")
         .agg(
             F.count(F.lit(1)).alias("trips"),

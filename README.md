@@ -6,9 +6,9 @@ End-to-end Databricks lakehouse for NYC ride-hailing trip data (NYC TLC High Vol
 Incremental, idempotent bronze/silver/gold pipelines with Delta Lake, explicit data quality checks with quarantine,
 CI/CD, and architecture decision records.
 
-> **Status: v0.1.0, batch lakehouse complete.** Bronze, silver and gold run locally in Docker and as a
-> Databricks job, with the same results on both. A data quality dashboard, an HTTP API and a
-> streaming replay are done; benchmarks and v1.0 are next
+> **Status: v1.1.0.** Bronze, silver and gold run locally in Docker and as a Databricks job, with the same
+> results on both, plus a data quality dashboard, an HTTP API, a reconciled streaming replay and benchmarks.
+> v1.1.0 adds a star schema checked on every run and an export for Power BI; the Power BI dashboard is next
 > (see the [roadmap](#roadmap)). Changes per release are in the [changelog](CHANGELOG.md).
 
 ## The problem
@@ -38,6 +38,8 @@ flowchart LR
     Q --> D["Quality dashboard<br/>rule rates + spikes"]
     S --> D
     G --> P["Snapshot<br/>Parquet per month"]
+    S --> SS["Star schema<br/>facts + dimensions, checked"]
+    SS --> PB["Power BI export<br/>one Parquet file per table"]
     P --> A["FastAPI + DuckDB"]
     S --> R["Replay<br/>one day, late events"]
     R --> K["Redpanda"]
@@ -51,6 +53,7 @@ flowchart LR
 | Quarantine | Rows that failed at least one reject rule, with the rule IDs | Overwrite one month per run |
 | Rule counts | Rows matched per quality rule per month, to spot changes in the source | Overwrite one month per run |
 | Gold | Daily trips per company, hourly busy zones, monthly driver economics | Rebuilt from silver, one month per run |
+| Star schema | `fct_trips`, `fct_trips_hourly` and four dimensions, for BI tools | Facts: one month per run; dimensions: rebuilt or merged |
 
 Column-level details: [docs/data-model.md](docs/data-model.md).
 
@@ -81,6 +84,110 @@ January to June 2025 on Databricks AI/BI. The dashboard is defined as code in
   rate in March (63,828 rows) and about 98 times its May rate in June (12,414 rows). No step failed,
   because W003 is a warning: the change was only visible by comparing months, which is what the dashboard
   is for.
+
+## Dimensional model and Power BI dashboard
+
+On top of silver sits a star schema for BI tools ([ADR 0014](docs/adr/0014-star-schema-and-powerbi-export.md)):
+two fact tables with numbers and keys, and four small dimension tables that describe when, where and which
+company.
+
+```mermaid
+erDiagram
+    dim_date ||--o{ fct_trips : "date_key"
+    dim_time ||--o{ fct_trips : "time_key"
+    dim_zone ||--o{ fct_trips : "pickup_zone_key"
+    dim_zone ||--o{ fct_trips : "dropoff_zone_key"
+    dim_company ||--o{ fct_trips : "company_key"
+    dim_date ||--o{ fct_trips_hourly : "date_key"
+    dim_time ||--o{ fct_trips_hourly : "time_key"
+    dim_zone ||--o{ fct_trips_hourly : "pickup_zone_key"
+    dim_company ||--o{ fct_trips_hourly : "company_key"
+    fct_trips {
+        bigint trip_key PK
+        int date_key FK
+        int time_key FK
+        int pickup_zone_key FK
+        int dropoff_zone_key FK
+        bigint company_key FK
+        double total_fare
+        double driver_pay
+        bigint wait_time_seconds
+    }
+    fct_trips_hourly {
+        int date_key FK
+        int time_key FK
+        int pickup_zone_key FK
+        bigint company_key FK
+        bigint trips
+        double total_fare_sum
+        bigint wait_time_trips
+    }
+    dim_zone {
+        int zone_key PK
+        string borough
+        string zone
+        boolean is_airport
+    }
+    dim_date {
+        int date_key PK
+        date date
+        string month_name
+        boolean is_weekend
+    }
+    dim_time {
+        int time_key PK
+        string day_part
+        boolean is_peak_hour
+    }
+    dim_company {
+        bigint company_key PK
+        string company_name
+    }
+```
+
+| Table | One row is | Used for |
+|---|---|---|
+| `fct_trips` | One trip that passed every quality rule | Trip-level questions, such as dropoffs at airports |
+| `fct_trips_hourly` | Pickup date x hour x zone x company | Most dashboard pages: small and fast |
+| `dim_zone` | One taxi zone, used twice: for pickup and for dropoff | Boroughs, zones, airports |
+| `dim_date`, `dim_time`, `dim_company` | One day, one hour, one company | Slicing by month, weekday, peak hour, company |
+
+- **Keys are computed from values**, so rerunning a month gives the same keys and nothing downstream breaks. The
+  source has no trip ID and contains identical rows, so `trip_key` hashes every column plus a sequence number.
+- **Every run checks itself**: silver trips = fact rows, unique trip keys, hourly totals = trip facts, and no
+  fact key without a dimension row. A failed check fails the run.
+- **Averages come from totals**: the hourly fact stores sums and counts, never averages (ADR 0008).
+
+Results on Databricks Free Edition, January to June 2025:
+
+| Month | Trips in `fct_trips` | Checks |
+|---|---|---|
+| 2025-01 | 20,402,922 | all 8 passed |
+| 2025-02 | 19,338,701 | all 8 passed |
+| 2025-03 | 20,536,446 | all 8 passed |
+| 2025-04 | 19,753,594 | all 8 passed |
+| 2025-05 | 21,090,811 | all 8 passed |
+| 2025-06 | 19,867,489 | all 8 passed |
+| **Total** | **120,989,963** | |
+
+About 1% of trips have no valid wait time (199,760 in January, 0.98%), because the pickup was recorded before
+the request (warning rule W001). They count as trips but are left out of the average wait.
+
+The Power BI export writes one Parquet file per table: trip grain for one month and hourly grain for every month.
+For June 2025 plus six months of hourly data it is 444.6 MB, of which `fct_trips` is 353.4 MB (19,867,489 rows)
+and `fct_trips_hourly` 91.2 MB (2,139,836 rows).
+
+```bash
+docker compose run --rm spark mobility-lakehouse star --month 2025-01            # build and check, safe to rerun
+docker compose run --rm spark mobility-lakehouse powerbi-export --month 2025-01  # files in data/powerbi
+
+# On Databricks: build every month, then export and download
+databricks bundle run build_star --profile mobility --params month=2025-06
+databricks bundle run export_powerbi --profile mobility --params month=2025-06
+databricks fs cp -r dbfs:/Volumes/workspace/mobility/serving/powerbi data/powerbi --overwrite --profile mobility
+```
+
+The Power BI dashboard on this model (executive overview, zones and boroughs, time patterns) is the next release.
 
 ## API
 
@@ -138,6 +245,8 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 | [0010](docs/adr/0010-data-quality-dashboard.md) | A Databricks AI/BI dashboard shows quality rule rates per month and flags spikes |
 | [0011](docs/adr/0011-api-over-a-parquet-snapshot.md) | The API reads a Parquet snapshot of gold with DuckDB instead of querying Databricks |
 | [0012](docs/adr/0012-streaming-replay-with-watermark.md) | Streaming replays a day through Redpanda; a 30-minute watermark decides which late events count |
+| [0013](docs/adr/0013-benchmark-methodology.md) | Benchmarks time every step over several repeats, locally and from the Databricks run history |
+| [0014](docs/adr/0014-star-schema-and-powerbi-export.md) | A star schema with value-based keys, checked on every run, exported to Power BI as Parquet |
 
 ## Roadmap
 
@@ -154,11 +263,15 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 ### Later stages (target: v1.0)
 
 - [x] Sprint 5: data quality dashboard on Databricks AI/BI, deployed with the bundle, six months loaded
-- [ ] Business dashboard pages on the gold tables
 - [x] Sprint 6: FastAPI service over a Parquet snapshot of gold, read with DuckDB, tested in CI
 - [x] Sprint 7: streaming replay through Redpanda with late events, Spark Structured Streaming with a 30-minute watermark
 - [x] Sprint 8: stream reconciled with batch gold, run log and reset command ([report](docs/reports/streaming_reconciliation_2025-01-15.md))
-- [ ] Benchmarks with documented, repeatable methodology
+- [x] Sprint 9: benchmarks with documented, repeatable methodology ([reports](docs/benchmarks/)), release v1.0.0
+
+### Stage 2: analytics (v1.1 onwards)
+
+- [x] Sprint 10: star schema with automatic checks, run on Databricks for six months, Power BI export (v1.1.0)
+- [ ] Power BI dashboard: executive overview, zones and boroughs, time patterns (v1.2.0)
 
 ## Tech stack
 
@@ -190,10 +303,12 @@ docker compose run --rm spark mobility-lakehouse bronze --month 2025-01    # saf
 docker compose run --rm spark mobility-lakehouse silver --month 2025-01    # quality rules, safe to rerun
 docker compose run --rm spark mobility-lakehouse gold --month 2025-01      # gold tables, safe to rerun
 docker compose run --rm spark mobility-lakehouse snapshot --month 2025-01  # Parquet for the API, safe to rerun
+docker compose run --rm spark mobility-lakehouse star --month 2025-01      # star schema, checked, safe to rerun
+docker compose run --rm spark mobility-lakehouse powerbi-export --month 2025-01  # Parquet files for Power BI
 docker compose run --rm spark pytest -m spark                              # Spark tests
 ```
 
-On Databricks, the same steps run as a four-task job defined in [`databricks.yml`](databricks.yml).
+On Databricks, the same steps run as a five-task job defined in [`databricks.yml`](databricks.yml).
 The step-by-step guide is in the [Databricks runbook](docs/runbook-databricks.md):
 
 ```bash
