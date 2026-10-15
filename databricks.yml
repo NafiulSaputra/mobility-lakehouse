@@ -6,6 +6,8 @@
 #   databricks bundle run monthly_pipeline --profile mobility --params month=2025-01
 #   databricks bundle run export_snapshot  --profile mobility --params month=2025-01
 #   databricks bundle run build_star       --profile mobility --params month=2025-01
+#   databricks bundle run export_powerbi   --profile mobility --params month=2025-06
+#   databricks fs cp -r dbfs:/Volumes/workspace/mobility/serving/powerbi data/powerbi --overwrite --profile mobility
 #
 # The raw files must already be in the volume /Volumes/<catalog>/<schema>/raw, and the volume
 # /Volumes/<catalog>/<schema>/serving must exist for the API snapshot (see docs/runbook-databricks.md).
@@ -162,4 +164,31 @@ resources:
             package_name: mobility_lakehouse
             entry_point: mobility-lakehouse-job
             parameters: ["star", "--month", "{{job.parameters.month}}",
+                         "--catalog", "${var.catalog}", "--schema", "${var.schema}"]
+
+    # Star schema as Parquet files for Power BI Desktop: trip grain for one month, hourly grain for every
+    # month, written to /Volumes/<catalog>/<schema>/serving/powerbi (ADR 0014).
+    export_powerbi:
+      name: mobility-lakehouse export for Power BI
+      description: Write the star schema as one Parquet file per table for Power BI Desktop.
+      max_concurrent_runs: 1
+
+      parameters:
+        - name: month
+          default: "2025-01"
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "5"
+            dependencies:
+              - ./dist/*.whl
+
+      tasks:
+        - task_key: powerbi
+          environment_key: default
+          python_wheel_task:
+            package_name: mobility_lakehouse
+            entry_point: mobility-lakehouse-job
+            parameters: ["powerbi", "--month", "{{job.parameters.month}}",
                          "--catalog", "${var.catalog}", "--schema", "${var.schema}"]

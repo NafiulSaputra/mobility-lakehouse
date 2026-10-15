@@ -50,10 +50,11 @@ class Table:
 
         Spark SQL only treats ``delta.`<path>``` as a path when it is absolute; a relative path such as the
         local ``data/lakehouse/...`` is read as a table in a schema called ``delta``. So local paths are
-        made absolute here. Paths with a scheme (``s3://``, ``dbfs:/``) are already absolute.
+        made absolute here. Paths starting with ``/`` or a scheme (``s3://``, ``dbfs:/``) are kept.
         """
         if self.path is not None:
-            path = self.path if ":" in self.path else os.path.abspath(self.path)
+            already_absolute = self.path.startswith("/") or ":" in self.path
+            path = self.path if already_absolute else os.path.abspath(self.path)
             return f"delta.`{path}`"
         return str(self.name)
 

@@ -14,10 +14,12 @@ from mobility_lakehouse.pipeline import (
     catalog_layout,
     gold_summary,
     local_layout,
+    powerbi_summary,
     silver_summary,
     snapshot_summary,
     star_summary,
 )
+from mobility_lakehouse.powerbi import POWERBI_TABLES, ExportedFile
 from mobility_lakehouse.silver import RuleCount, SilverResult
 from mobility_lakehouse.tlc import Month
 
@@ -40,6 +42,7 @@ def test_local_layout_uses_folders() -> None:
     assert layout.bronze == Table(path="data/lakehouse/bronze/fhvhv_trips")
     assert layout.gold.daily_company_trips == Table(path="data/lakehouse/gold/fhvhv_daily_company_trips")
     assert layout.snapshot_dir == "data/snapshot"
+    assert layout.powerbi_dir == "data/powerbi"
     assert layout.persist is True
     assert layout.star.fct_trips == Table(path="data/lakehouse/gold/fhvhv_fct_trips")
     assert layout.star.dimensions.zone == Table(path="data/lakehouse/gold/fhvhv_dim_zone")
@@ -50,8 +53,12 @@ def test_sql_identifier_makes_local_paths_absolute(tmp_path: Path, monkeypatch: 
     monkeypatch.chdir(tmp_path)
 
     local = Table(path="data/lakehouse/gold/fhvhv_dim_company").sql_identifier()
+    inner = local.removeprefix("delta.`").removesuffix("`")
 
-    assert local == f"delta.`{tmp_path / 'data/lakehouse/gold/fhvhv_dim_company'}`"
+    # Spark runs on Linux, but the tests also run on Windows, where the separators are backslashes.
+    assert local.startswith("delta.`") and local.endswith("`")
+    assert Path(inner).is_absolute()
+    assert inner.replace("\\", "/").endswith("/data/lakehouse/gold/fhvhv_dim_company")
     assert Table(path="/tmp/t").sql_identifier() == "delta.`/tmp/t`"
     assert Table(path="s3://bucket/t").sql_identifier() == "delta.`s3://bucket/t`"
     assert Table(name="main.mobility.gold_fhvhv_dim_company").sql_identifier() == (
@@ -70,6 +77,7 @@ def test_catalog_layout_uses_unity_catalog_tables_and_a_volume() -> None:
         name="workspace.mobility.gold_fhvhv_monthly_driver_economics"
     )
     assert layout.snapshot_dir == "/Volumes/workspace/mobility/serving/snapshot"
+    assert layout.powerbi_dir == "/Volumes/workspace/mobility/serving/powerbi"
     assert layout.star.fct_trips_hourly == Table(name="workspace.mobility.gold_fhvhv_fct_trips_hourly")
     assert layout.star.dimensions.date == Table(name="workspace.mobility.gold_fhvhv_dim_date")
     # Databricks serverless does not support DataFrame caching (ADR 0009).
@@ -165,3 +173,26 @@ def test_a_failed_star_check_fails_the_summary() -> None:
     assert not summary.passed
     assert "FAIL date_key without a dimension row: expected 0, found 2" in star_summary(JAN, summary)[-2]
     assert star_summary(JAN, summary)[-1] == "  Some checks FAILED."
+
+
+def test_job_and_cli_have_a_powerbi_export_step() -> None:
+    assert job_parser().parse_args(["powerbi", "--month", "2025-06"]).step == "powerbi"
+    assert cli_parser().parse_args(["powerbi-export", "--month", "2025-06"]).command == "powerbi-export"
+
+
+def test_powerbi_tables_put_dimensions_before_facts() -> None:
+    assert POWERBI_TABLES[:4] == ("dim_date", "dim_time", "dim_zone", "dim_company")
+    assert set(POWERBI_TABLES[4:]) == {"fct_trips", "fct_trips_hourly"}
+
+
+def test_powerbi_summary_shows_rows_and_megabytes_per_file() -> None:
+    files = [
+        ExportedFile("dim_zone", "data/powerbi/dim_zone.parquet", 265, 12_000),
+        ExportedFile("fct_trips", "data/powerbi/fct_trips.parquet", 20_402_922, 512_340_000),
+    ]
+    lines = powerbi_summary(JAN, files, "data/powerbi")
+
+    assert lines[0] == "Power BI export in data/powerbi (trip grain: 2025-01):"
+    assert lines[1].split() == ["dim_zone.parquet", "265", "rows", "0.0", "MB"]
+    assert lines[2].split() == ["fct_trips.parquet", "20,402,922", "rows", "512.3", "MB"]
+    assert lines[3].split() == ["total", "512.4", "MB"]

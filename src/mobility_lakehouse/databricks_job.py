@@ -12,8 +12,10 @@ from collections.abc import Sequence
 from mobility_lakehouse.pipeline import (
     catalog_layout,
     gold_summary,
+    powerbi_summary,
     run_bronze,
     run_gold,
+    run_powerbi_export,
     run_silver,
     run_snapshot,
     run_star,
@@ -23,7 +25,7 @@ from mobility_lakehouse.pipeline import (
 )
 from mobility_lakehouse.tlc import DATASETS, Month
 
-STEPS = ("bronze", "silver", "gold", "snapshot", "star")
+STEPS = ("bronze", "silver", "gold", "snapshot", "star", "powerbi")
 
 
 def _month(text: str) -> Month:
@@ -41,7 +43,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--schema", default="mobility", help="Unity Catalog schema")
     parser.add_argument("--volume", default="raw", help="volume in the schema that holds the raw files")
     parser.add_argument(
-        "--serving-volume", default="serving", help="volume in the schema that holds the API snapshot"
+        "--serving-volume",
+        default="serving",
+        help="volume in the schema that holds the API snapshot and the Power BI export",
     )
     parser.add_argument("--dataset", default="fhvhv", choices=sorted(DATASETS))
     return parser
@@ -68,6 +72,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         print("\n".join(star_summary(args.month, summary)))
         if not summary.passed:
             raise RuntimeError(f"star schema checks failed for {args.month}; see the task output")
+    elif args.step == "powerbi":
+        files = run_powerbi_export(spark, layout, args.month)
+        print("\n".join(powerbi_summary(args.month, files, layout.powerbi_dir)))
     else:
         rows = run_snapshot(spark, layout, args.month)
         print("\n".join(snapshot_summary(args.month, rows, layout.snapshot_dir)))

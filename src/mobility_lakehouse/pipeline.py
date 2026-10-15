@@ -14,6 +14,7 @@ from mobility_lakehouse.delta_io import PARTITION_COLUMN, Table
 from mobility_lakehouse.dimensions import DimensionTargets
 from mobility_lakehouse.facts import StarTargets
 from mobility_lakehouse.gold import GoldTargets
+from mobility_lakehouse.powerbi import ExportedFile
 from mobility_lakehouse.silver import SilverResult, SilverTargets
 from mobility_lakehouse.tlc import Month, file_name
 
@@ -36,6 +37,7 @@ class Layout:
     gold: GoldTargets
     star: StarTargets  # star schema on top of silver (ADR 0014)
     snapshot_dir: str  # Parquet tables read by the API (ADR 0011)
+    powerbi_dir: str  # one Parquet file per star schema table, for Power BI Desktop (ADR 0014)
     persist: bool = True  # Databricks serverless does not support DataFrame caching
 
     def raw_file(self, month: Month) -> str:
@@ -77,6 +79,7 @@ def local_layout(data_dir: Path, lakehouse_dir: Path, dataset: str = "fhvhv") ->
             fct_trips_hourly=table("gold", "fct_trips_hourly"),
         ),
         snapshot_dir=(data_dir / "snapshot").as_posix(),
+        powerbi_dir=(data_dir / "powerbi").as_posix(),
         persist=True,
     )
 
@@ -88,7 +91,7 @@ def catalog_layout(
     volume: str = "raw",
     serving_volume: str = "serving",
 ) -> Layout:
-    """Unity Catalog tables, a volume for raw files and a volume for the API snapshot, used on Databricks."""
+    """Unity Catalog tables, a volume for raw files and a volume for the exports, used on Databricks."""
 
     def table(layer: str, name: str) -> Table:
         return Table(name=f"{catalog}.{schema}.{layer}_{dataset}_{name}")
@@ -118,6 +121,7 @@ def catalog_layout(
             fct_trips_hourly=table("gold", "fct_trips_hourly"),
         ),
         snapshot_dir=f"/Volumes/{catalog}/{schema}/{serving_volume}/snapshot",
+        powerbi_dir=f"/Volumes/{catalog}/{schema}/{serving_volume}/powerbi",
         persist=False,
     )
 
@@ -295,6 +299,38 @@ def run_snapshot(spark: SparkSession, layout: Layout, month: Month) -> dict[str,
     return rows
 
 
+def run_powerbi_export(spark: SparkSession, layout: Layout, month: Month) -> list[ExportedFile]:
+    """Export the star schema for Power BI: trip grain for ``month``, hourly grain for every month (ADR 0014).
+
+    Returns every written file with its rows and size, measured after writing.
+    """
+    from pyspark.sql import functions as F
+
+    from mobility_lakehouse.powerbi import TRIP_COLUMNS_NOT_EXPORTED, export_files
+
+    star = layout.star
+    trips = _month_of(star.fct_trips.read(spark), month)
+    if trips.isEmpty():
+        raise MissingInputError(f"no fct_trips rows for {month}; run the star step first")
+
+    hourly = star.fct_trips_hourly.read(spark)
+    years = hourly.agg(
+        F.min(F.year(PARTITION_COLUMN)).alias("first"), F.max(F.year(PARTITION_COLUMN)).alias("last")
+    ).first()
+    # A date table covers whole years with no gaps, so Power BI accepts it as the model's date table.
+    dates = star.dimensions.date.read(spark).where(F.col("year").between(years["first"], years["last"]))
+
+    frames = {
+        "dim_date": dates,
+        "dim_time": star.dimensions.time.read(spark),
+        "dim_zone": star.dimensions.zone.read(spark),
+        "dim_company": star.dimensions.company.read(spark),
+        "fct_trips_hourly": hourly,
+        "fct_trips": trips.drop(*TRIP_COLUMNS_NOT_EXPORTED),
+    }
+    return export_files(frames, layout.powerbi_dir)
+
+
 # ---------------------------------------------------------------------------------------------
 # Summaries: plain Python, shared by the CLI and the Databricks job logs.
 # ---------------------------------------------------------------------------------------------
@@ -332,6 +368,15 @@ def gold_summary(month: Month, summary: GoldSummary) -> list[str]:
             f"${row['driver_pay_per_mile']}/mile  ${row['driver_pay_per_minute']}/minute  "
             f"driver share of base fare {row['driver_share_of_base_fare']}"
         )
+    return lines
+
+
+def powerbi_summary(month: Month, files: list[ExportedFile], out_dir: str) -> list[str]:
+    lines = [f"Power BI export in {out_dir} (trip grain: {month}):"]
+    for file in files:
+        lines.append(f"  {file.name + '.parquet':<26} {file.rows:>11,} rows {file.size_mb:>9,.1f} MB")
+    total = sum(file.size_bytes for file in files) / 1_000_000
+    lines.append(f"  {'total':<26} {'':>11}      {total:>9,.1f} MB")
     return lines
 
 
