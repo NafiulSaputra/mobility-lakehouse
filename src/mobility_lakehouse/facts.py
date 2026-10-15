@@ -20,11 +20,17 @@ same keys.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from mobility_lakehouse.contracts import HVFHV_SOURCE
 from mobility_lakehouse.delta_io import PARTITION_COLUMN, Table, write_month
-from mobility_lakehouse.dimensions import check_in_calendar, company_key_column, date_key_column
+from mobility_lakehouse.dimensions import (
+    DimensionTargets,
+    check_in_calendar,
+    company_key_column,
+    date_key_column,
+)
 from mobility_lakehouse.gold import PASSENGER_CHARGES
 from mobility_lakehouse.tlc import Month
 
@@ -188,3 +194,12 @@ def build_fct_trips_hourly(facts_month: DataFrame, month: Month, target: Table) 
     """Replace one month of ``fct_trips_hourly`` from that month of ``fct_trips``."""
     check_in_calendar(month)
     write_month(fct_trips_hourly(facts_month), month, target)
+
+
+@dataclass(frozen=True)
+class StarTargets:
+    """Every table of the star schema."""
+
+    dimensions: DimensionTargets
+    fct_trips: Table
+    fct_trips_hourly: Table

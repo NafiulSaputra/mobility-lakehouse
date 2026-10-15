@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from mobility_lakehouse.delta_io import PARTITION_COLUMN, Table
+from mobility_lakehouse.dimensions import DimensionTargets
+from mobility_lakehouse.facts import StarTargets
 from mobility_lakehouse.gold import GoldTargets
 from mobility_lakehouse.silver import SilverResult, SilverTargets
 from mobility_lakehouse.tlc import Month, file_name
@@ -32,6 +34,7 @@ class Layout:
     bronze: Table
     silver: SilverTargets
     gold: GoldTargets
+    star: StarTargets  # star schema on top of silver (ADR 0014)
     snapshot_dir: str  # Parquet tables read by the API (ADR 0011)
     persist: bool = True  # Databricks serverless does not support DataFrame caching
 
@@ -63,6 +66,16 @@ def local_layout(data_dir: Path, lakehouse_dir: Path, dataset: str = "fhvhv") ->
             hourly_pickup_zones=table("gold", "hourly_pickup_zones"),
             monthly_driver_economics=table("gold", "monthly_driver_economics"),
         ),
+        star=StarTargets(
+            dimensions=DimensionTargets(
+                date=table("gold", "dim_date"),
+                time=table("gold", "dim_time"),
+                zone=table("gold", "dim_zone"),
+                company=table("gold", "dim_company"),
+            ),
+            fct_trips=table("gold", "fct_trips"),
+            fct_trips_hourly=table("gold", "fct_trips_hourly"),
+        ),
         snapshot_dir=(data_dir / "snapshot").as_posix(),
         persist=True,
     )
@@ -93,6 +106,16 @@ def catalog_layout(
             daily_company_trips=table("gold", "daily_company_trips"),
             hourly_pickup_zones=table("gold", "hourly_pickup_zones"),
             monthly_driver_economics=table("gold", "monthly_driver_economics"),
+        ),
+        star=StarTargets(
+            dimensions=DimensionTargets(
+                date=table("gold", "dim_date"),
+                time=table("gold", "dim_time"),
+                zone=table("gold", "dim_zone"),
+                company=table("gold", "dim_company"),
+            ),
+            fct_trips=table("gold", "fct_trips"),
+            fct_trips_hourly=table("gold", "fct_trips_hourly"),
         ),
         snapshot_dir=f"/Volumes/{catalog}/{schema}/{serving_volume}/snapshot",
         persist=False,
@@ -150,6 +173,95 @@ def run_gold(spark: SparkSession, layout: Layout, month: Month) -> GoldSummary:
     economics = _month_of(layout.gold.monthly_driver_economics.read(spark), month)
     top = economics.orderBy(F.col("trips").desc()).limit(10).collect()
     return GoldSummary(rows, [row.asDict() for row in top])
+
+
+@dataclass(frozen=True)
+class StarCheck:
+    """One automatic check after building the star schema: what was expected and what was found."""
+
+    name: str
+    expected: int
+    actual: int
+
+    @property
+    def passed(self) -> bool:
+        return self.expected == self.actual
+
+
+@dataclass(frozen=True)
+class StarSummary:
+    rows_per_table: dict[str, int]
+    checks: list[StarCheck]
+    trips_without_wait: int  # trips whose wait time is null (pickup before request, or no request time)
+
+    @property
+    def passed(self) -> bool:
+        return all(check.passed for check in self.checks)
+
+
+def run_star(spark: SparkSession, layout: Layout, month: Month) -> StarSummary:
+    """Build the star schema for one silver month, then check it (ADR 0014).
+
+    Dimensions are written first, so the facts never point at a missing dimension row. The checks run on the
+    tables as written: every silver trip is a fact, every key finds its dimension row, trip keys are unique,
+    and the hourly fact adds up to the trip fact. A failed check is reported, so the caller can stop the run.
+    """
+    from pyspark.sql import functions as F
+
+    from mobility_lakehouse.dimensions import build_dimensions, check_in_calendar
+    from mobility_lakehouse.facts import build_fct_trips, build_fct_trips_hourly
+
+    check_in_calendar(month)
+    silver_month = _month_of(layout.silver.silver.read(spark), month)
+    if silver_month.isEmpty():
+        raise MissingInputError(f"no silver rows for {month}; run the silver step first")
+
+    star = layout.star
+    zones = spark.read.option("header", True).csv(layout.zones_file)
+    build_dimensions(spark, zones, silver_month, star.dimensions)
+    build_fct_trips(silver_month, month, star.fct_trips)
+    facts = _month_of(star.fct_trips.read(spark), month)
+    build_fct_trips_hourly(facts, month, star.fct_trips_hourly)
+    hourly = _month_of(star.fct_trips_hourly.read(spark), month)
+
+    # Global aggregates: each returns exactly one row.
+    trip_stats = facts.agg(
+        F.count(F.lit(1)).alias("rows"),
+        F.countDistinct("trip_key").alias("keys"),
+        F.sum(F.col("wait_time_seconds").isNull().cast("long")).alias("no_wait"),
+    ).first()
+    hourly_stats = hourly.agg(F.count(F.lit(1)).alias("rows"), F.sum("trips").alias("trips")).first()
+    trip_rows = int(trip_stats["rows"])
+
+    dims = star.dimensions
+    lookups = (
+        ("date_key", dims.date, "date_key"),
+        ("time_key", dims.time, "time_key"),
+        ("pickup_zone_key", dims.zone, "zone_key"),
+        ("dropoff_zone_key", dims.zone, "zone_key"),
+        ("company_key", dims.company, "company_key"),
+    )
+    orphan_checks = []
+    for fact_key, table, dim_key in lookups:
+        dimension = table.read(spark).select(F.col(dim_key).alias("_dim_key"))
+        orphans = facts.join(F.broadcast(dimension), facts[fact_key] == dimension["_dim_key"], "left_anti")
+        orphan_checks.append(StarCheck(f"{fact_key} without a dimension row", 0, orphans.count()))
+
+    checks = [
+        StarCheck("silver trips = fct_trips rows", silver_month.count(), trip_rows),
+        StarCheck("unique trip keys = fct_trips rows", trip_rows, int(trip_stats["keys"])),
+        StarCheck("trips in fct_trips_hourly = fct_trips rows", trip_rows, int(hourly_stats["trips"] or 0)),
+        *orphan_checks,
+    ]
+    rows = {
+        "dim_date": dims.date.read(spark).count(),
+        "dim_time": dims.time.read(spark).count(),
+        "dim_zone": dims.zone.read(spark).count(),
+        "dim_company": dims.company.read(spark).count(),
+        "fct_trips": trip_rows,
+        "fct_trips_hourly": int(hourly_stats["rows"]),
+    }
+    return StarSummary(rows, checks, int(trip_stats["no_wait"] or 0))
 
 
 def run_snapshot(spark: SparkSession, layout: Layout, month: Month) -> dict[str, int]:
@@ -220,4 +332,18 @@ def gold_summary(month: Month, summary: GoldSummary) -> list[str]:
             f"${row['driver_pay_per_mile']}/mile  ${row['driver_pay_per_minute']}/minute  "
             f"driver share of base fare {row['driver_share_of_base_fare']}"
         )
+    return lines
+
+
+def star_summary(month: Month, summary: StarSummary) -> list[str]:
+    lines = [f"Star schema {month}:"]
+    lines += [f"  {name:<26} {rows:>11,} rows" for name, rows in summary.rows_per_table.items()]
+    trips = summary.rows_per_table.get("fct_trips", 0)
+    share = f"{100 * summary.trips_without_wait / trips:.2f}%" if trips else "n/a"
+    lines.append(f"  trips without a valid wait time: {summary.trips_without_wait:,} ({share})")
+    lines.append("  Checks:")
+    for check in summary.checks:
+        status = "ok  " if check.passed else "FAIL"
+        lines.append(f"    {status} {check.name}: expected {check.expected:,}, found {check.actual:,}")
+    lines.append("  All checks passed." if summary.passed else "  Some checks FAILED.")
     return lines

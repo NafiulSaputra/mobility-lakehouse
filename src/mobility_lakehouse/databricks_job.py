@@ -16,12 +16,14 @@ from mobility_lakehouse.pipeline import (
     run_gold,
     run_silver,
     run_snapshot,
+    run_star,
     silver_summary,
     snapshot_summary,
+    star_summary,
 )
 from mobility_lakehouse.tlc import DATASETS, Month
 
-STEPS = ("bronze", "silver", "gold", "snapshot")
+STEPS = ("bronze", "silver", "gold", "snapshot", "star")
 
 
 def _month(text: str) -> Month:
@@ -61,6 +63,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         print("\n".join(silver_summary(args.month, run_silver(spark, layout, args.month))))
     elif args.step == "gold":
         print("\n".join(gold_summary(args.month, run_gold(spark, layout, args.month))))
+    elif args.step == "star":
+        summary = run_star(spark, layout, args.month)
+        print("\n".join(star_summary(args.month, summary)))
+        if not summary.passed:
+            raise RuntimeError(f"star schema checks failed for {args.month}; see the task output")
     else:
         rows = run_snapshot(spark, layout, args.month)
         print("\n".join(snapshot_summary(args.month, rows, layout.snapshot_dir)))

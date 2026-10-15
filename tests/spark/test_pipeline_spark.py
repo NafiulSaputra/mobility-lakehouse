@@ -25,6 +25,7 @@ from mobility_lakehouse.pipeline import (  # noqa: E402
     run_gold,
     run_silver,
     run_snapshot,
+    run_star,
 )
 from mobility_lakehouse.tlc import Month  # noqa: E402
 
@@ -115,3 +116,30 @@ def test_local_benchmark_runs_every_step_on_each_repeat(spark: SparkSession, tmp
     # Reruns replace the month: the second repeat ends with the same rows as the first.
     assert result.rows["bronze"] == 7
     assert result.rows["silver"] == 6
+
+
+@pytest.mark.parametrize("persist", [True, False], ids=["local", "databricks-serverless"])
+def test_silver_to_star_passes_every_check_and_is_safe_to_rerun(
+    spark: SparkSession, tmp_path: Path, persist: bool
+) -> None:
+    layout = prepare_inputs(spark, tmp_path, persist)
+    run_bronze(spark, layout, JAN)
+    run_silver(spark, layout, JAN)
+
+    first = run_star(spark, layout, JAN)
+    second = run_star(spark, layout, JAN)
+
+    assert first.passed, [c for c in first.checks if not c.passed]
+    assert first.rows_per_table["fct_trips"] == 6  # the quarantined trip is not a fact
+    assert first.rows_per_table["dim_zone"] == 264
+    assert first.rows_per_table["dim_time"] == 24
+    assert second.rows_per_table == first.rows_per_table
+
+
+def test_star_refuses_to_run_before_silver(spark: SparkSession, tmp_path: Path) -> None:
+    layout = prepare_inputs(spark, tmp_path, persist=True)
+    run_bronze(spark, layout, JAN)
+    run_silver(spark, layout, JAN)
+
+    with pytest.raises(MissingInputError, match="no silver rows for 2025-02"):
+        run_star(spark, layout, FEB)

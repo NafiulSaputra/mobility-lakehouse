@@ -6,6 +6,7 @@ mobility-lakehouse bronze   --month 2025-01      # needs Spark: run it inside Do
 mobility-lakehouse silver   --month 2025-01      # needs Spark: run it inside Docker
 mobility-lakehouse gold     --month 2025-01      # needs Spark: run it inside Docker
 mobility-lakehouse snapshot --month 2025-01      # needs Spark: Parquet tables for the API (data/snapshot)
+mobility-lakehouse star     --month 2025-01      # needs Spark: star schema (dimensions + facts), checked
 
 Streaming (ADR 0012), inside Docker with Redpanda running (docker compose up -d redpanda):
 mobility-lakehouse replay-extract --date 2025-01-15   # one day of silver trips -> event files
@@ -95,6 +96,12 @@ def build_parser() -> argparse.ArgumentParser:
     gold = commands.add_parser("gold", help="rebuild the gold tables for one silver month (safe to rerun)")
     _add_common(gold)
     _add_lakehouse(gold)
+
+    star = commands.add_parser(
+        "star", help="build the star schema for one silver month and check it (safe to rerun)"
+    )
+    _add_common(star)
+    _add_lakehouse(star)
 
     snapshot = commands.add_parser(
         "snapshot", help="write one gold month as Parquet for the API, in <data-dir>/snapshot (safe to rerun)"
@@ -267,6 +274,28 @@ def _run_gold(args: argparse.Namespace) -> int:
 
     print("\n".join(gold_summary(args.month, summary)))
     return 0
+
+
+def _run_star(args: argparse.Namespace) -> int:
+    from mobility_lakehouse.local_spark import create_local_spark
+    from mobility_lakehouse.pipeline import run_star, star_summary
+
+    zones_file = zone_lookup_path(args.data_dir)
+    if not zones_file.exists():
+        print(f"File not found: {zones_file}\nRun first: mobility-lakehouse download --month {args.month}")
+        return 1
+
+    spark = create_local_spark("mobility-lakehouse-star")
+    try:
+        summary = run_star(spark, _local(args), args.month)
+    except (MissingInputError, ValueError) as error:
+        print(f"Cannot build the star schema: {error}")
+        return 1
+    finally:
+        spark.stop()
+
+    print("\n".join(star_summary(args.month, summary)))
+    return 0 if summary.passed else 1
 
 
 def _run_snapshot(args: argparse.Namespace) -> int:
@@ -489,6 +518,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "silver": _run_silver,
         "gold": _run_gold,
         "snapshot": _run_snapshot,
+        "star": _run_star,
         "replay-extract": _run_replay_extract,
         "replay": _run_replay,
         "stream": _run_stream,

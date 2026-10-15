@@ -14,6 +14,7 @@ pipeline code runs in both places.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -45,9 +46,15 @@ class Table:
         return spark.read.table(str(self.name))
 
     def sql_identifier(self) -> str:
-        """How Spark SQL refers to this table: ``delta.`<path>``` or the catalog name."""
+        """How Spark SQL refers to this table: ``delta.`<path>``` or the catalog name.
+
+        Spark SQL only treats ``delta.`<path>``` as a path when it is absolute; a relative path such as the
+        local ``data/lakehouse/...`` is read as a table in a schema called ``delta``. So local paths are
+        made absolute here. Paths with a scheme (``s3://``, ``dbfs:/``) are already absolute.
+        """
         if self.path is not None:
-            return f"delta.`{self.path}`"
+            path = self.path if ":" in self.path else os.path.abspath(self.path)
+            return f"delta.`{path}`"
         return str(self.name)
 
 

@@ -5,6 +5,7 @@
 #   databricks bundle deploy   --profile mobility
 #   databricks bundle run monthly_pipeline --profile mobility --params month=2025-01
 #   databricks bundle run export_snapshot  --profile mobility --params month=2025-01
+#   databricks bundle run build_star       --profile mobility --params month=2025-01
 #
 # The raw files must already be in the volume /Volumes/<catalog>/<schema>/raw, and the volume
 # /Volumes/<catalog>/<schema>/serving must exist for the API snapshot (see docs/runbook-databricks.md).
@@ -45,7 +46,7 @@ resources:
   jobs:
     monthly_pipeline:
       name: mobility-lakehouse monthly pipeline
-      description: Load one TLC month into bronze, apply the quality rules (silver), rebuild gold and the API snapshot.
+      description: Load one TLC month into bronze, apply the quality rules (silver), rebuild gold, the star schema and the API snapshot.
       max_concurrent_runs: 1
 
       parameters:
@@ -89,6 +90,17 @@ resources:
             parameters: ["gold", "--month", "{{job.parameters.month}}",
                          "--catalog", "${var.catalog}", "--schema", "${var.schema}"]
 
+        # Star schema (ADR 0014). Reads silver only, so it runs next to gold, not after it.
+        - task_key: star
+          depends_on:
+            - task_key: silver
+          environment_key: default
+          python_wheel_task:
+            package_name: mobility_lakehouse
+            entry_point: mobility-lakehouse-job
+            parameters: ["star", "--month", "{{job.parameters.month}}",
+                         "--catalog", "${var.catalog}", "--schema", "${var.schema}"]
+
         # Parquet copy of the month for the API (ADR 0011).
         - task_key: snapshot
           depends_on:
@@ -124,4 +136,30 @@ resources:
             package_name: mobility_lakehouse
             entry_point: mobility-lakehouse-job
             parameters: ["snapshot", "--month", "{{job.parameters.month}}",
+                         "--catalog", "${var.catalog}", "--schema", "${var.schema}"]
+
+    # Only the star schema, for months whose silver tables already exist (ADR 0014).
+    build_star:
+      name: mobility-lakehouse build star schema
+      description: Build the star schema (dimensions and facts) for one silver month, then check it.
+      max_concurrent_runs: 1
+
+      parameters:
+        - name: month
+          default: "2025-01"
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "5"
+            dependencies:
+              - ./dist/*.whl
+
+      tasks:
+        - task_key: star
+          environment_key: default
+          python_wheel_task:
+            package_name: mobility_lakehouse
+            entry_point: mobility-lakehouse-job
+            parameters: ["star", "--month", "{{job.parameters.month}}",
                          "--catalog", "${var.catalog}", "--schema", "${var.schema}"]
