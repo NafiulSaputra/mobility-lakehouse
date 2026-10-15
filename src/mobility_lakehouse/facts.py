@@ -1,7 +1,11 @@
-"""Star schema facts: one row per trip, with keys to every dimension (ADR 0014).
+"""Star schema facts: one row per trip, and an hourly summary for dashboards (ADR 0014).
 
 ``fct_trips`` has the grain "one trip that passed every reject rule". It is built from one silver month, so
 quarantined rows never reach it (ADR 0004, 0008), and it replaces that month only (ADR 0003).
+
+``fct_trips_hourly`` has the grain "pickup date x pickup hour x pickup zone x company". It is built from
+``fct_trips`` (not from silver), so its totals always reconcile with the trip-level facts. It stores sums and
+counts, never averages: an average is computed from totals in the report (ADR 0008).
 
 Keys point at the dimensions in ``dimensions.py``:
 
@@ -125,3 +129,62 @@ def build_fct_trips(silver_month: DataFrame, month: Month, target: Table) -> Non
     """
     check_in_calendar(month)
     write_month(fct_trips(silver_month), month, target)
+
+
+# Grain of the hourly fact: one row per pickup date, pickup hour, pickup zone and company.
+HOURLY_KEYS = ("date_key", "time_key", "pickup_zone_key", "company_key")
+
+# Money measures, summed and rounded to cents. ``trip_miles`` and ``trip_time`` are summed separately.
+MONEY_MEASURES = (
+    "base_passenger_fare",
+    "tolls",
+    "bcf",
+    "sales_tax",
+    "congestion_surcharge",
+    "airport_fee",
+    "cbd_congestion_fee",
+    "tips",
+    "driver_pay",
+    "total_fare",
+)
+
+FCT_TRIPS_HOURLY_COLUMNS = (
+    *HOURLY_KEYS,
+    "trips",
+    "trip_miles_sum",
+    "trip_time_sum",
+    *(f"{m}_sum" for m in MONEY_MEASURES),
+    "wait_time_seconds_sum",
+    "wait_time_trips",
+    PARTITION_COLUMN,
+)
+
+
+def fct_trips_hourly(facts: DataFrame) -> DataFrame:
+    """Aggregate trip facts to date x hour x pickup zone x company.
+
+    ``wait_time_trips`` counts only the trips that have a wait time, so the report computes the average wait
+    as ``wait_time_seconds_sum / wait_time_trips``; dividing by ``trips`` would count trips without a valid
+    wait as zero-second waits. A money column that is null for every trip of a group stays null (the CBD
+    congestion fee before 2025, ADR 0006).
+    """
+    from pyspark.sql import functions as F
+
+    return (
+        facts.groupBy(*HOURLY_KEYS, PARTITION_COLUMN)
+        .agg(
+            F.count(F.lit(1)).alias("trips"),
+            F.round(F.sum("trip_miles"), 2).alias("trip_miles_sum"),
+            F.sum("trip_time").alias("trip_time_sum"),
+            *(F.round(F.sum(m), 2).alias(f"{m}_sum") for m in MONEY_MEASURES),
+            F.sum("wait_time_seconds").alias("wait_time_seconds_sum"),
+            F.count("wait_time_seconds").alias("wait_time_trips"),
+        )
+        .select(*FCT_TRIPS_HOURLY_COLUMNS)
+    )
+
+
+def build_fct_trips_hourly(facts_month: DataFrame, month: Month, target: Table) -> None:
+    """Replace one month of ``fct_trips_hourly`` from that month of ``fct_trips``."""
+    check_in_calendar(month)
+    write_month(fct_trips_hourly(facts_month), month, target)
