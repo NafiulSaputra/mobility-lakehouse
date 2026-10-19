@@ -6,14 +6,14 @@ table fct_trips_hourly
 		lineageTag: 9dbf13e8-bee1-4c20-8055-40aaa218e070
 
 	measure 'Total Revenue' = SUM ( fct_trips_hourly[total_fare_sum] )
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
 		lineageTag: fa60a099-6672-41d5-8d54-aa4e69f046e0
 
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
 
 	measure 'Avg Fare per Trip' = DIVIDE ( [Total Revenue], [Total Trips] )
+		formatString: \$#,0.###############;(\$#,0.###############);\$#,0.###############
 		lineageTag: a808d5ef-c5ef-4064-985a-f2503b88b4eb
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
 	measure 'Avg Wait Time (min)' = ```
 
@@ -24,14 +24,14 @@ table fct_trips_hourly
 		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
 	measure 'Driver Pay' = SUM ( fct_trips_hourly[driver_pay_sum] )
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
 		lineageTag: 050dfffb-8da7-43a8-a6d2-01883176b3d6
 
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
 
 	measure 'Driver Pay Share %' = DIVIDE ( [Driver Pay], [Total Revenue] )
+		formatString: 0.00%;-0.00%;0.00%
 		lineageTag: 59d4e3d3-d7a0-40ce-a89c-fc6e6a676100
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
 	measure 'Trips Previous Month' = ```
 
@@ -46,17 +46,15 @@ table fct_trips_hourly
 			        VAR tripsBefore = [Trips Previous Month]
 			        RETURN IF ( NOT ISBLANK ( tripsNow ) && NOT ISBLANK ( tripsBefore ), DIVIDE ( tripsNow - tripsBefore, tripsBefore ) )
 			```
+		formatString: 0.00%;-0.00%;0.00%
 		lineageTag: 590904ed-e6e7-41f0-b459-a6155f1dd87c
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
 	measure 'Company Revenue Share %' = ```
 
 			        DIVIDE ( [Total Revenue], CALCULATE ( [Total Revenue], ALL ( dim_company ) ) )
 			```
+		formatString: 0.00%;-0.00%;0.00%
 		lineageTag: 164b3cc9-218c-4940-82b1-7c7433d83f48
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
 	measure 'Airport Pickups' = ```
 
@@ -72,9 +70,8 @@ table fct_trips_hourly
 			            CALCULATE ( [Total Trips], dim_date[is_weekend] = FALSE () )
 			        )
 			```
+		formatString: 0.00%;-0.00%;0.00%
 		lineageTag: 20fe1861-13a2-40be-a0e3-cf85f9a37b75
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
 	column date_key
 		dataType: int64
