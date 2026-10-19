@@ -6,10 +6,10 @@ End-to-end Databricks lakehouse for NYC ride-hailing trip data (NYC TLC High Vol
 Incremental, idempotent bronze/silver/gold pipelines with Delta Lake, explicit data quality checks with quarantine,
 CI/CD, and architecture decision records.
 
-> **Status: v1.1.0.** Bronze, silver and gold run locally in Docker and as a Databricks job, with the same
+> **Status: v1.2.0.** Bronze, silver and gold run locally in Docker and as a Databricks job, with the same
 > results on both, plus a data quality dashboard, an HTTP API, a reconciled streaming replay and benchmarks.
-> v1.1.0 adds a star schema checked on every run and an export for Power BI; the Power BI dashboard is next
-> (see the [roadmap](#roadmap)). Changes per release are in the [changelog](CHANGELOG.md).
+> v1.1.0 added a star schema checked on every run and an export for Power BI; v1.2.0 adds the Power BI model
+> and an executive overview page (see the [roadmap](#roadmap)). Changes per release are in the [changelog](CHANGELOG.md).
 
 ## The problem
 
@@ -187,7 +187,39 @@ databricks bundle run export_powerbi --profile mobility --params month=2025-06
 databricks fs cp -r dbfs:/Volumes/workspace/mobility/serving/powerbi data/powerbi --overwrite --profile mobility
 ```
 
-The Power BI dashboard on this model (executive overview, zones and boroughs, time patterns) is the next release.
+### Power BI dashboard
+
+The model is built in Power BI Desktop and kept in the repository as a Power BI project
+([`powerbi/`](powerbi/)): the semantic model in TMDL and the report in PBIR, both plain text, so relationships
+and measures can be reviewed in a pull request. The data itself is not committed.
+
+![Power BI executive overview](docs/images/powerbi-executive-overview.png)
+
+- **Relationships:** one-to-many, single direction, from each dimension to both facts. `dim_zone` is related to
+  `fct_trips` twice: pickup is active, dropoff is inactive and used with `USERELATIONSHIP`. `dim_date` is marked
+  as the date table.
+- **Measures** are computed from totals: average wait = seconds waited / trips with a valid wait time; average
+  fare = revenue / trips; month-over-month growth is blank when either month has no data.
+- **Checked against Databricks:** trips per month in Power BI equal the `fct_trips` counts above for all six
+  months, and June gives 19,867,489 trips in both facts.
+
+January to June 2025, all companies:
+
+| Measure | Value |
+|---|---|
+| Trips | 120,989,963 |
+| Revenue (everything passengers paid, tips included) | $4.04 billion |
+| Average fare per trip | $33.42 |
+| Average wait from request to pickup | 4.83 minutes |
+| Driver pay as a share of revenue | 60.79% |
+
+To open it: run the Power BI export (above), then open `powerbi/mobility-dashboard.pbip` in Power BI Desktop.
+The tables read `data/powerbi/*.parquet`; if the repository is in another folder, change the path under
+**Transform data > Data source settings**.
+
+The executive overview is the first page. Pages for zones and boroughs and for time patterns use measures that
+already exist in the model (`Airport Pickups`, `Airport Dropoffs (trip grain)`, `Weekday Peak Share %`) and are
+next on the roadmap.
 
 ## API
 
@@ -271,12 +303,13 @@ Every significant decision is recorded as an Architecture Decision Record in [`d
 ### Stage 2: analytics (v1.1 onwards)
 
 - [x] Sprint 10: star schema with automatic checks, run on Databricks for six months, Power BI export (v1.1.0)
-- [ ] Power BI dashboard: executive overview, zones and boroughs, time patterns (v1.2.0)
+- [x] Sprint 11: Power BI model on the star schema, checked against Databricks, executive overview page (v1.2.0)
+- [ ] Power BI pages for zones and boroughs, and time patterns
 
 ## Tech stack
 
 Python 3.12 · PySpark 4.1 · Delta Lake 4.3 · Databricks (Free Edition, serverless) · Databricks Asset Bundles ·
-Databricks AI/BI · FastAPI · DuckDB · Redpanda · Docker · uv · pytest · ruff · [pipeline-lint](https://github.com/NafiulSaputra/pipeline-lint) · GitHub Actions
+Databricks AI/BI · Power BI · FastAPI · DuckDB · Redpanda · Docker · uv · pytest · ruff · [pipeline-lint](https://github.com/NafiulSaputra/pipeline-lint) · GitHub Actions
 
 Python 3.12 matches Databricks serverless environment version 5.
 

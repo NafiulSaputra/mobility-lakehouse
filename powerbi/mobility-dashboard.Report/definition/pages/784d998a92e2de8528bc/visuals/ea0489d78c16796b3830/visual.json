@@ -1,0 +1,186 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
+  "name": "ea0489d78c16796b3830",
+  "position": {
+    "x": 9.4488552259751248,
+    "y": 0,
+    "z": 0,
+    "height": 281.10344297275992,
+    "width": 1911.030969453469,
+    "tabOrder": 0
+  },
+  "visual": {
+    "visualType": "cardVisual",
+    "query": {
+      "queryState": {
+        "Data": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fct_trips_hourly"
+                    }
+                  },
+                  "Property": "Total Trips"
+                }
+              },
+              "queryRef": "fct_trips_hourly.Total Trips",
+              "nativeQueryRef": "Total Trips"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fct_trips_hourly"
+                    }
+                  },
+                  "Property": "Total Revenue"
+                }
+              },
+              "queryRef": "fct_trips_hourly.Total Revenue",
+              "nativeQueryRef": "Total Revenue"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fct_trips_hourly"
+                    }
+                  },
+                  "Property": "Avg Fare per Trip"
+                }
+              },
+              "queryRef": "fct_trips_hourly.Avg Fare per Trip",
+              "nativeQueryRef": "Avg Fare per Trip"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fct_trips_hourly"
+                    }
+                  },
+                  "Property": "Avg Wait Time (min)"
+                }
+              },
+              "queryRef": "fct_trips_hourly.Avg Wait Time (min)",
+              "nativeQueryRef": "Avg Wait Time (min)"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fct_trips_hourly"
+                    }
+                  },
+                  "Property": "Driver Pay Share %"
+                }
+              },
+              "queryRef": "fct_trips_hourly.Driver Pay Share %",
+              "nativeQueryRef": "Driver Pay Share %"
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Measure": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "fct_trips_hourly"
+                  }
+                },
+                "Property": "Total Trips"
+              }
+            },
+            "direction": "Descending"
+          }
+        ],
+        "isDefaultSort": true
+      }
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "c77a2341119230bf5acf",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "fct_trips_hourly"
+              }
+            },
+            "Property": "Total Trips"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "5aa95819d867deea8cc5",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "fct_trips_hourly"
+              }
+            },
+            "Property": "Total Revenue"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "dc35829fe79e7a806bbf",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "fct_trips_hourly"
+              }
+            },
+            "Property": "Avg Fare per Trip"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "886371310b5793cc9985",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "fct_trips_hourly"
+              }
+            },
+            "Property": "Avg Wait Time (min)"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "b9cf19ce301bd5109c18",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "fct_trips_hourly"
+              }
+            },
+            "Property": "Driver Pay Share %"
+          }
+        },
+        "type": "Advanced"
+      }
+    ]
+  }
+}

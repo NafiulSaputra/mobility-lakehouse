@@ -4,8 +4,12 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      # The Power BI project files are written by Power BI Desktop; rewriting them makes Desktop report
+      # "files changed externally".
       - id: trailing-whitespace
+        exclude: ^powerbi/
       - id: end-of-file-fixer
+        exclude: ^powerbi/
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict

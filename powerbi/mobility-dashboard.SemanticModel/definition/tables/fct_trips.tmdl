@@ -1,0 +1,211 @@
+table fct_trips
+	lineageTag: 4afb6ba5-bbeb-497a-bd4d-f51d399c54d2
+
+	measure 'Trips (trip grain)' = COUNTROWS ( fct_trips )
+		formatString: 0
+		lineageTag: 2b38abb5-479a-46de-b6fa-ca545317a8d5
+
+	measure 'Airport Dropoffs (trip grain)' = ```
+
+			        CALCULATE (
+			            COUNTROWS ( fct_trips ),
+			            USERELATIONSHIP ( fct_trips[dropoff_zone_key], dim_zone[zone_key] ),
+			            dim_zone[is_airport] = TRUE ()
+			        )
+			```
+		formatString: 0
+		lineageTag: 05dda357-b602-4e29-8b99-9bf84e1dbe75
+
+	column date_key
+		dataType: int64
+		formatString: 0
+		lineageTag: 3e8abd67-f40b-44f7-8393-b65353f0b053
+		summarizeBy: none
+		sourceColumn: date_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column time_key
+		dataType: int64
+		formatString: 0
+		lineageTag: 7e109d2f-c519-42d8-b675-6ac432281748
+		summarizeBy: none
+		sourceColumn: time_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column pickup_zone_key
+		dataType: int64
+		formatString: 0
+		lineageTag: 7e938b7b-f362-4cf7-bade-7c76d37844d7
+		summarizeBy: none
+		sourceColumn: pickup_zone_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column dropoff_zone_key
+		dataType: int64
+		formatString: 0
+		lineageTag: 5bb9aa7e-c18f-4d7f-9a1e-44877e285a67
+		summarizeBy: sum
+		sourceColumn: dropoff_zone_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column company_key
+		dataType: int64
+		formatString: 0
+		lineageTag: 6aa37032-7cad-4fd2-b928-d9193a3c7af3
+		summarizeBy: none
+		sourceColumn: company_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column trip_miles
+		dataType: double
+		lineageTag: 0272a1a7-6fbf-44c6-9d28-91c1e31bd300
+		summarizeBy: sum
+		sourceColumn: trip_miles
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column trip_time
+		dataType: int64
+		formatString: 0
+		lineageTag: 563edc2c-676e-412e-a9ac-2fd43a9adcda
+		summarizeBy: sum
+		sourceColumn: trip_time
+
+		annotation SummarizationSetBy = Automatic
+
+	column base_passenger_fare
+		dataType: double
+		lineageTag: 2b24edb2-54fc-4aef-a42e-3c03a105590c
+		summarizeBy: sum
+		sourceColumn: base_passenger_fare
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column tolls
+		dataType: double
+		lineageTag: 16ea4807-987c-499a-a393-ab0000c8ab86
+		summarizeBy: sum
+		sourceColumn: tolls
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column bcf
+		dataType: double
+		lineageTag: 77390e9a-76af-4449-bb75-638b2c9efebb
+		summarizeBy: sum
+		sourceColumn: bcf
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column sales_tax
+		dataType: double
+		lineageTag: 28ff784f-9f90-41f9-8e11-52cf13e0ce20
+		summarizeBy: sum
+		sourceColumn: sales_tax
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column congestion_surcharge
+		dataType: double
+		lineageTag: 7c8b99a2-1917-4d4d-a262-91d3626d9f5e
+		summarizeBy: sum
+		sourceColumn: congestion_surcharge
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column airport_fee
+		dataType: double
+		lineageTag: fadf850f-1c14-47be-98ad-579ea0bf5d1d
+		summarizeBy: sum
+		sourceColumn: airport_fee
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column cbd_congestion_fee
+		dataType: double
+		lineageTag: 9b017ab2-0819-468c-a173-7ed14ac93361
+		summarizeBy: sum
+		sourceColumn: cbd_congestion_fee
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column tips
+		dataType: double
+		lineageTag: fc118e7c-b42c-43f9-a003-d89b59e99901
+		summarizeBy: sum
+		sourceColumn: tips
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column driver_pay
+		dataType: double
+		lineageTag: 9d44b466-2521-4428-8ffa-e43287d99860
+		summarizeBy: sum
+		sourceColumn: driver_pay
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column total_fare
+		dataType: double
+		lineageTag: c88301c1-6d3f-43a5-b8b7-1514cc237c23
+		summarizeBy: sum
+		sourceColumn: total_fare
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column wait_time_seconds
+		dataType: int64
+		formatString: 0
+		lineageTag: d9182076-bafe-43b4-b4bc-4bb27c8c906f
+		summarizeBy: sum
+		sourceColumn: wait_time_seconds
+
+		annotation SummarizationSetBy = Automatic
+
+	column data_month
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: 27c56185-94dc-4ac8-8ed9-4011bf2e5438
+		summarizeBy: none
+		sourceColumn: data_month
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	partition fct_trips = m
+		mode: import
+		source =
+				let
+				    Source = Parquet.Document(File.Contents("D:\Nafiul\project\mobility-lakehouse\data\powerbi\fct_trips.parquet"), [Compression=null, LegacyColumnNameEncoding=false, MaxDepth=null])
+				in
+				    Source
+
+	annotation PBI_ResultType = Table

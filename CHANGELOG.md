@@ -4,6 +4,28 @@ All notable changes to this project are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-10-19
+
+A Power BI model and dashboard page on the star schema.
+
+### Added
+
+- Power BI project in `powerbi/`: the semantic model as TMDL and the report as PBIR, so both can be reviewed as
+  text. The data cache and `.pbix` files are not committed.
+- Model: the six star schema tables, one-to-many single-direction relationships, the dropoff zone as an inactive
+  relationship used with `USERELATIONSHIP`, and `dim_date` marked as the date table.
+- 13 measures, computed from totals: trips, revenue, average fare, average wait, driver pay share,
+  month-over-month growth, revenue share per company, airport pickups and dropoffs, weekday peak share.
+- Executive overview page: key figures, trips per month and revenue share per company.
+
+### Changed
+
+- Pre-commit no longer rewrites whitespace in the Power BI project files, which Power BI Desktop owns.
+
+### Validated
+
+- Trips per month in Power BI equal the `fct_trips` counts on Databricks for January to June 2025.
+
 ## [1.1.0] - 2026-10-15
 
 A dimensional model on top of silver, checked on every run and exported for Power BI.
@@ -77,6 +99,7 @@ First release: a batch lakehouse for NYC TLC High Volume For-Hire Vehicle trips,
 
 - January 2025 gives identical counts locally and on Databricks Free Edition, and a rerun changes nothing.
 
+[1.2.0]: https://github.com/NafiulSaputra/mobility-lakehouse/releases/tag/v1.2.0
 [1.1.0]: https://github.com/NafiulSaputra/mobility-lakehouse/releases/tag/v1.1.0
 [1.0.0]: https://github.com/NafiulSaputra/mobility-lakehouse/releases/tag/v1.0.0
 [0.1.0]: https://github.com/NafiulSaputra/mobility-lakehouse/releases/tag/v0.1.0

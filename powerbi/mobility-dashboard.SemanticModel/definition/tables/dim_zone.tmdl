@@ -1,0 +1,63 @@
+table dim_zone
+	lineageTag: a090451f-548b-4b5a-9f26-cc05371ba957
+
+	column zone_key
+		dataType: int64
+		formatString: 0
+		lineageTag: e579d556-79b3-4f75-988c-6de503085f93
+		summarizeBy: none
+		sourceColumn: zone_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column location_id
+		dataType: int64
+		formatString: 0
+		lineageTag: fa2a94f5-f401-4f37-a24f-91b5b64900e3
+		summarizeBy: sum
+		sourceColumn: location_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column borough
+		dataType: string
+		lineageTag: 03f2a3b4-dc69-44f2-b2a9-5ae66dd08b8e
+		summarizeBy: none
+		sourceColumn: borough
+
+		annotation SummarizationSetBy = Automatic
+
+	column zone
+		dataType: string
+		lineageTag: bbdbdefc-2f32-4afa-8901-d39ef666eaef
+		summarizeBy: none
+		sourceColumn: zone
+
+		annotation SummarizationSetBy = Automatic
+
+	column service_zone
+		dataType: string
+		lineageTag: ed4d05de-78d7-4967-a938-acb4b5014d82
+		summarizeBy: none
+		sourceColumn: service_zone
+
+		annotation SummarizationSetBy = Automatic
+
+	column is_airport
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: e2f7d990-2695-45ad-bc2e-3d497567686d
+		summarizeBy: none
+		sourceColumn: is_airport
+
+		annotation SummarizationSetBy = Automatic
+
+	partition dim_zone = m
+		mode: import
+		source =
+				let
+				    Source = Parquet.Document(File.Contents("D:\Nafiul\project\mobility-lakehouse\data\powerbi\dim_zone.parquet"), [Compression=null, LegacyColumnNameEncoding=false, MaxDepth=null])
+				in
+				    Source
+
+	annotation PBI_ResultType = Table

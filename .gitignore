@@ -227,3 +227,8 @@ derby.log
 
 # Databricks bundle working files
 .databricks/
+
+# Power BI: .pbix files and the model cache hold a full copy of the data; localSettings is per user
+*.pbix
+powerbi/**/.pbi/cache.abf
+powerbi/**/.pbi/localSettings.json

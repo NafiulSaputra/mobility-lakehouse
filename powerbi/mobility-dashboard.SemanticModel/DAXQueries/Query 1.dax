@@ -1,0 +1,41 @@
+DEFINE
+    MEASURE fct_trips_hourly[Total Trips] = SUM ( fct_trips_hourly[trips] )
+    MEASURE fct_trips_hourly[Total Revenue] = SUM ( fct_trips_hourly[total_fare_sum] )
+    MEASURE fct_trips_hourly[Avg Fare per Trip] = DIVIDE ( [Total Revenue], [Total Trips] )
+    MEASURE fct_trips_hourly[Avg Wait Time (min)] =
+        DIVIDE ( SUM ( fct_trips_hourly[wait_time_seconds_sum] ), SUM ( fct_trips_hourly[wait_time_trips] ) ) / 60
+    MEASURE fct_trips_hourly[Driver Pay] = SUM ( fct_trips_hourly[driver_pay_sum] )
+    MEASURE fct_trips_hourly[Driver Pay Share %] = DIVIDE ( [Driver Pay], [Total Revenue] )
+    MEASURE fct_trips_hourly[Trips Previous Month] =
+        CALCULATE ( [Total Trips], DATEADD ( dim_date[date], -1, MONTH ) )
+    MEASURE fct_trips_hourly[MoM Trip Growth %] =
+        VAR tripsNow = [Total Trips]
+        VAR tripsBefore = [Trips Previous Month]
+        RETURN IF ( NOT ISBLANK ( tripsNow ) && NOT ISBLANK ( tripsBefore ), DIVIDE ( tripsNow - tripsBefore, tripsBefore ) )
+    MEASURE fct_trips_hourly[Company Revenue Share %] =
+        DIVIDE ( [Total Revenue], CALCULATE ( [Total Revenue], ALL ( dim_company ) ) )
+    MEASURE fct_trips_hourly[Airport Pickups] =
+        CALCULATE ( [Total Trips], dim_zone[is_airport] = TRUE () )
+    MEASURE fct_trips_hourly[Weekday Peak Share %] =
+        DIVIDE (
+            CALCULATE ( [Total Trips], dim_time[is_peak_hour] = TRUE (), dim_date[is_weekend] = FALSE () ),
+            CALCULATE ( [Total Trips], dim_date[is_weekend] = FALSE () )
+        )
+    MEASURE fct_trips[Trips (trip grain)] = COUNTROWS ( fct_trips )
+    MEASURE fct_trips[Airport Dropoffs (trip grain)] =
+        CALCULATE (
+            COUNTROWS ( fct_trips ),
+            USERELATIONSHIP ( fct_trips[dropoff_zone_key], dim_zone[zone_key] ),
+            dim_zone[is_airport] = TRUE ()
+        )
+
+EVALUATE
+    SUMMARIZECOLUMNS (
+        dim_date[month_start],
+        "Total Trips", [Total Trips],
+        "Trips (trip grain)", [Trips (trip grain)],
+        "MoM Trip Growth %", [MoM Trip Growth %],
+        "Airport Pickups", [Airport Pickups],
+        "Airport Dropoffs (trip grain)", [Airport Dropoffs (trip grain)],
+        "Weekday Peak Share %", [Weekday Peak Share %]
+    )
