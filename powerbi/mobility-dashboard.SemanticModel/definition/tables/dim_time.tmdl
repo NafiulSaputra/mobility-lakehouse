@@ -1,0 +1,58 @@
+table dim_time
+	lineageTag: 1c02605e-855a-4468-aac4-ff1d0402a3ad
+
+	column time_key
+		dataType: int64
+		formatString: 0
+		lineageTag: 47712fb2-6009-401c-a40c-6b240f7ca541
+		summarizeBy: none
+		sourceColumn: time_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column hour
+		dataType: int64
+		formatString: 0
+		lineageTag: 669b6aec-c347-4b3b-ba96-4317fb4f2ee8
+		summarizeBy: sum
+		sourceColumn: hour
+
+		annotation SummarizationSetBy = Automatic
+
+	column hour_label
+		dataType: string
+		lineageTag: d8d0793c-369e-4101-bfb4-e50cc67addd4
+		summarizeBy: none
+		sourceColumn: hour_label
+		sortByColumn: hour
+
+		changedProperty = SortByColumn
+
+		annotation SummarizationSetBy = Automatic
+
+	column day_part
+		dataType: string
+		lineageTag: 70a3a43b-1a10-442f-93e1-3a42e0caafcf
+		summarizeBy: none
+		sourceColumn: day_part
+
+		annotation SummarizationSetBy = Automatic
+
+	column is_peak_hour
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 68204a4c-6405-438d-8572-118d0036f063
+		summarizeBy: none
+		sourceColumn: is_peak_hour
+
+		annotation SummarizationSetBy = Automatic
+
+	partition dim_time = m
+		mode: import
+		source =
+				let
+				    Source = Parquet.Document(File.Contents("D:\Nafiul\project\mobility-lakehouse\data\powerbi\dim_time.parquet"), [Compression=null, LegacyColumnNameEncoding=false, MaxDepth=null])
+				in
+				    Source
+
+	annotation PBI_ResultType = Table

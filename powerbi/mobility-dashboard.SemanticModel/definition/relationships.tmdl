@@ -1,0 +1,36 @@
+relationship 433a3783-048f-3312-ad0f-d32561371d05
+	fromColumn: fct_trips_hourly.date_key
+	toColumn: dim_date.date_key
+
+relationship bbcbc88c-585e-3a85-9e7b-288ef7b5cd1e
+	fromColumn: fct_trips_hourly.time_key
+	toColumn: dim_time.time_key
+
+relationship e27209f6-74b2-143b-baa5-e161e33128ab
+	fromColumn: fct_trips_hourly.pickup_zone_key
+	toColumn: dim_zone.zone_key
+
+relationship 345d67b3-09eb-4436-a941-9342582e53a3
+	fromColumn: fct_trips_hourly.company_key
+	toColumn: dim_company.company_key
+
+relationship 929e1b1d-c087-6b16-2112-ccce56116b63
+	fromColumn: fct_trips.date_key
+	toColumn: dim_date.date_key
+
+relationship 9e0082ef-bbe4-0dc7-556a-77de903ff5cc
+	fromColumn: fct_trips.time_key
+	toColumn: dim_time.time_key
+
+relationship 217c7486-206e-f90e-2836-2ef687bb1321
+	fromColumn: fct_trips.pickup_zone_key
+	toColumn: dim_zone.zone_key
+
+relationship 09fe17df-0bc6-d795-189a-db6053d70fe5
+	isActive: false
+	fromColumn: fct_trips.dropoff_zone_key
+	toColumn: dim_zone.zone_key
+
+relationship 4d0262db-0f28-2c57-133c-ca3756e8d6aa
+	fromColumn: fct_trips.company_key
+	toColumn: dim_company.company_key

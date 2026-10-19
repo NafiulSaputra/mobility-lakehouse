@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "mobility-dashboard"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "bf8a687a-e9c5-41dc-9903-551b31036e5b"
+  }
+}
